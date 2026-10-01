@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,29 +42,35 @@ import androidx.compose.ui.unit.sp
 
 private val Verde = Color(0xFF008F63)
 private val VerdeOscuro = Color(0xFF006B4A)
+
 private val FondoEncontrado = Color(0xFFE2F6EB)
 
 
 // ==========================================================
 // CONTENEDOR PRINCIPAL
 //
-// En MainActivity, donde antes llamabas HomeScreen(),
-// ahora llama PantallaPrincipal().
+// En MainActivity llama PantallaPrincipal().
 // ==========================================================
 
 @Composable
-fun PantallaPrincipal() {
+fun PantallaPrincipal(
+    onCerrarSesion: () -> Unit = {}
+) {
 
     var seccion by remember { mutableStateOf("Inicio") }
 
     val navegar: (String) -> Unit = { destino ->
-        // Por ahora existen estas tres pantallas
-        if (destino == "Inicio" || destino == "Buscar" || destino == "Publicar") {
+        if (destino == "Inicio" ||
+            destino == "Buscar" ||
+            destino == "Publicar" ||
+            destino == "Mis reportes" ||
+            destino == "Perfil"
+        ) {
             seccion = destino
         }
     }
 
-    // Botón "atrás" del teléfono: de Buscar regresa a Inicio
+    // Botón "atrás" del teléfono: regresa a Inicio
     BackHandler(enabled = seccion != "Inicio") {
         seccion = "Inicio"
     }
@@ -74,6 +81,16 @@ fun PantallaPrincipal() {
         "Publicar" -> PublicarScreen(
             onNavegar = navegar,
             onTerminar = { seccion = "Inicio" }
+        )
+
+        "Mis reportes" -> MisReportesScreen(onNavegar = navegar)
+
+        "Perfil" -> PerfilScreen(
+            onNavegar = navegar,
+            onCerrarSesion = {
+                seccion = "Inicio"
+                onCerrarSesion()
+            }
         )
 
         else -> HomeScreen(onNavegar = navegar)
@@ -133,7 +150,12 @@ fun UniFindBottomBar(
         // ==================================================
 
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { onSeleccionar("Publicar") },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
@@ -142,8 +164,7 @@ fun UniFindBottomBar(
                     .size(58.dp)
                     .shadow(8.dp, CircleShape, ambientColor = Verde, spotColor = Verde)
                     .background(Verde, CircleShape)
-                    .clip(CircleShape)
-                    .clickable { onSeleccionar("Publicar") },
+                    .clip(CircleShape),
                 contentAlignment = Alignment.Center
             ) {
 
@@ -161,7 +182,8 @@ fun UniFindBottomBar(
                 text = "Publicar",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
-                color = VerdeOscuro
+                color = VerdeOscuro,
+                maxLines = 1
             )
         }
 
