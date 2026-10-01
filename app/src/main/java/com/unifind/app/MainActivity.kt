@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+
             UniFindTheme {
 
                 var pantallaActual by remember {
@@ -56,6 +57,14 @@ class MainActivity : ComponentActivity() {
 
                             onRegister = {
                                 pantallaActual = "registro"
+                            },
+
+                            // ==================================
+                            // AL PRESIONAR INICIAR SESIÓN
+                            // ==================================
+
+                            onLogin = {
+                                pantallaActual = "home"
                             }
                         )
                     }
@@ -73,6 +82,20 @@ class MainActivity : ComponentActivity() {
                                 pantallaActual = "inicio"
                             }
                         )
+                    }
+
+
+                    // ==========================================
+                    // PANTALLA PRINCIPAL DE UNIFIND
+                    //
+                    // PantallaPrincipal() cambia entre
+                    // Inicio (HomeScreen) y Buscar (BuscarScreen)
+                    // con la barra inferior.
+                    // ==========================================
+
+                    "home" -> {
+
+                        PantallaPrincipal()
                     }
                 }
             }

@@ -47,11 +47,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-
 @Composable
 fun LoginScreen(
     onBack: () -> Unit,
-    onRegister: () -> Unit
+    onRegister: () -> Unit,
+    onLogin: () -> Unit
 ) {
 
     // =========================================
@@ -136,7 +136,6 @@ fun LoginScreen(
                 }
             }
 
-
             Spacer(modifier = Modifier.height(13.dp))
 
 
@@ -153,7 +152,6 @@ fun LoginScreen(
                 textAlign = TextAlign.Center
             )
 
-
             Spacer(modifier = Modifier.height(7.dp))
 
 
@@ -167,7 +165,6 @@ fun LoginScreen(
                 color = textoGris,
                 textAlign = TextAlign.Center
             )
-
 
             Spacer(modifier = Modifier.height(28.dp))
 
@@ -184,9 +181,7 @@ fun LoginScreen(
                 color = verdeOscuro
             )
 
-
             Spacer(modifier = Modifier.height(7.dp))
-
 
             OutlinedTextField(
                 value = correo,
@@ -196,7 +191,6 @@ fun LoginScreen(
                     .height(58.dp),
                 singleLine = true,
 
-                // ICONO DE CORREO (imagen envelope_solid)
                 leadingIcon = {
                     Image(
                         painter = painterResource(id = R.drawable.envelope_solid),
@@ -205,7 +199,6 @@ fun LoginScreen(
                     )
                 },
 
-                // COLOR DEL TEXTO QUE ESCRIBE EL USUARIO
                 textStyle = TextStyle(
                     color = textoNegro,
                     fontSize = 15.sp
@@ -236,7 +229,6 @@ fun LoginScreen(
                 )
             )
 
-
             Spacer(modifier = Modifier.height(18.dp))
 
 
@@ -252,9 +244,7 @@ fun LoginScreen(
                 color = verdeOscuro
             )
 
-
             Spacer(modifier = Modifier.height(7.dp))
-
 
             OutlinedTextField(
                 value = password,
@@ -264,7 +254,6 @@ fun LoginScreen(
                     .height(58.dp),
                 singleLine = true,
 
-                // ICONO DE CANDADO (imagen unlock_solid)
                 leadingIcon = {
                     Image(
                         painter = painterResource(id = R.drawable.unlock_solid),
@@ -273,7 +262,6 @@ fun LoginScreen(
                     )
                 },
 
-                // COLOR DEL TEXTO QUE ESCRIBE EL USUARIO
                 textStyle = TextStyle(
                     color = textoNegro,
                     fontSize = 15.sp
@@ -295,7 +283,10 @@ fun LoginScreen(
                     PasswordVisualTransformation()
                 },
 
-                // OJO MOSTRAR / OCULTAR
+                // =========================================
+                // MOSTRAR / OCULTAR CONTRASEÑA
+                // =========================================
+
                 trailingIcon = {
                     IconButton(
                         onClick = { mostrarPassword = !mostrarPassword }
@@ -341,13 +332,15 @@ fun LoginScreen(
                 text = "¿Olvidaste tu contraseña?",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp, end = 2.dp),
+                    .padding(
+                        top = 10.dp,
+                        end = 2.dp
+                    ),
                 textAlign = TextAlign.End,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = verdeUniFind
             )
-
 
             Spacer(modifier = Modifier.height(18.dp))
 
@@ -358,7 +351,9 @@ fun LoginScreen(
 
             Button(
                 onClick = {
-                    // Aquí después conectaremos la autenticación.
+                    // POR AHORA NO VALIDAMOS CORREO NI CONTRASEÑA.
+                    // Simplemente pasamos a la pantalla principal.
+                    onLogin()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -375,7 +370,6 @@ fun LoginScreen(
                     color = Color.White
                 )
             }
-
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -410,7 +404,6 @@ fun LoginScreen(
                 )
             }
 
-
             Spacer(modifier = Modifier.height(16.dp))
 
 
@@ -420,7 +413,7 @@ fun LoginScreen(
 
             OutlinedButton(
                 onClick = {
-                    // Aquí posteriormente conectaremos Google.
+                    // Google se conectará después.
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -446,7 +439,6 @@ fun LoginScreen(
                     color = textoNegro
                 )
             }
-
 
             Spacer(modifier = Modifier.height(18.dp))
 
