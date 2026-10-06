@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -14,6 +16,7 @@ android {
         applicationId = "com.unifind.app"
         minSdk = 28
         targetSdk = 36
+
         versionCode = 1
         versionName = "1.0"
 
@@ -23,6 +26,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -41,6 +45,11 @@ android {
 }
 
 dependencies {
+
+    // =========================================
+    // ANDROIDX / COMPOSE
+    // =========================================
+
     implementation(platform(libs.androidx.compose.bom))
 
     implementation(libs.androidx.activity.compose)
@@ -52,9 +61,25 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
+    // =========================================
     // ÍCONOS
+    // =========================================
+
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.material:material-icons-extended")
+
+    // =========================================
+    // FIREBASE
+    // =========================================
+
+    // Firebase BoM
+    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+
+    // Firebase Authentication
+    implementation("com.google.firebase:firebase-auth")
+
+    // =========================================
+    // TEST
+    // =========================================
 
     testImplementation(libs.junit)
 
@@ -62,6 +87,10 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+
+    // =========================================
+    // DEBUG
+    // =========================================
 
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)

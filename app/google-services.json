@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1010033557280",
+    "project_id": "unifind-4bbbc",
+    "storage_bucket": "unifind-4bbbc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1010033557280:android:faa5ce91b78f8818bc2145",
+        "android_client_info": {
+          "package_name": "com.unifind.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHf8T9nGsv8UeN5GJFY4KexW5Xf1lrs3Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
