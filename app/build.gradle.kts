@@ -8,19 +8,19 @@ plugins {
 android {
     namespace = "com.unifind.app"
 
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.unifind.app"
+
         minSdk = 28
         targetSdk = 36
 
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner =
+            "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -28,7 +28,9 @@ android {
             isMinifyEnabled = false
 
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile(
+                    "proguard-android-optimize.txt"
+                ),
                 "proguard-rules.pro"
             )
         }
@@ -62,20 +64,32 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
     // =========================================
-    // ÍCONOS
+    // ICONOS
     // =========================================
 
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation(
+        "androidx.compose.material:material-icons-extended"
+    )
 
     // =========================================
     // FIREBASE
     // =========================================
 
-    // Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    implementation(
+        platform(
+            "com.google.firebase:firebase-bom:34.19.0"
+        )
+    )
 
     // Firebase Authentication
-    implementation("com.google.firebase:firebase-auth")
+    implementation(
+        "com.google.firebase:firebase-auth"
+    )
+
+    // 🔥 CLOUD FIRESTORE
+    implementation(
+        "com.google.firebase:firebase-firestore"
+    )
 
     // =========================================
     // TEST
@@ -83,15 +97,31 @@ dependencies {
 
     testImplementation(libs.junit)
 
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(
+        platform(libs.androidx.compose.bom)
+    )
+
+    androidTestImplementation(
+        libs.androidx.compose.ui.test.junit4
+    )
+
+    androidTestImplementation(
+        libs.androidx.espresso.core
+    )
+
+    androidTestImplementation(
+        libs.androidx.junit
+    )
 
     // =========================================
     // DEBUG
     // =========================================
 
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(
+        libs.androidx.compose.ui.test.manifest
+    )
+
+    debugImplementation(
+        libs.androidx.compose.ui.tooling
+    )
 }

@@ -1,438 +1,305 @@
 package com.unifind.app
 
-import androidx.compose.foundation.Image
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-
-// ==========================================================
-// COLORES UNIFIND
-// ==========================================================
-
-private val Verde = Color(0xFF008F63)
-private val VerdeOscuro = Color(0xFF006B4A)
-private val Rojo = Color(0xFFE53935)
-
-private val FondoPerdido = Color(0xFFFFE9E9)
-private val FondoEncontrado = Color(0xFFE2F6EB)
-private val FondoGris = Color(0xFFF3F5F5)
-
-private val TextoPrincipal = Color(0xFF202124)
-private val TextoSecundario = Color(0xFF5F6368)
-
+import com.unifind.app.data.EstadoReporte
+import com.unifind.app.data.UniFindRepository
+import com.unifind.app.ui.Aparecer
+import com.unifind.app.ui.EncabezadoOla
+import com.unifind.app.ui.EsqueletoTarjeta
+import com.unifind.app.ui.EstadoVacio
+import com.unifind.app.ui.NumeroAnimado
+import com.unifind.app.ui.TarjetaReporte
+import com.unifind.app.ui.UF
+import com.unifind.app.ui.alPresionar
+import com.unifind.app.ui.estilo
 
 // ==========================================================
-// MODELO
-// ==========================================================
-
-private data class MiReporte(
-    val titulo: String,
-    val estado: String,        // Perdido | Encontrado | En recuperación | Recuperado
-    val esPerdido: Boolean,    // true = reporté un objeto perdido, false = encontrado
-    val tiempo: String,
-    val contactos: Int,
-    val emoji: String,         // se muestra mientras no haya foto
-    val imagen: Int? = null    // R.drawable.foto_xxx cuando tengas fotos
-)
-
-
-// ==========================================================
-// PANTALLA MIS REPORTES
+// MIS REPORTES
+//
+// Las publicaciones del usuario con su estado, tiempo y
+// número de contactos. Al tocar una se abre el detalle,
+// donde se puede cambiar el estado (F07).
 // ==========================================================
 
 @Composable
 fun MisReportesScreen(
-    onNavegar: (String) -> Unit = {}
+    onNavegar: (String) -> Unit = {},
+    onAbrirReporte: (String) -> Unit = {}
 ) {
 
-    // ------------------------------------------------------
-    // DATOS DE EJEMPLO
-    //
-    // Para poner fotos, guarda tus imágenes en res/drawable
-    // y agrega al final, por ejemplo:
-    // MiReporte("Mochila negra", ..., "🎒", R.drawable.foto_mochila)
-    // ------------------------------------------------------
+    val reportes by UniFindRepository.reportes.collectAsState()
+    val cargando by UniFindRepository.cargando.collectAsState()
+    val error by UniFindRepository.error.collectAsState()
 
-    val reportes = listOf(
-        MiReporte("Mochila negra", "Perdido", true, "Hace 3 días", 2, "🎒"),
-        MiReporte("Llaves con llavero azul", "Encontrado", false, "Hace 1 semana", 1, "🔑"),
-        MiReporte("Celular Samsung", "En recuperación", true, "Hace 2 semanas", 0, "📱"),
-        MiReporte("Tarjeta universitaria", "Recuperado", false, "Hace 1 mes", 1, "💳")
-    )
+    val miUid = UniFindRepository.miUid
 
+    var pestana by rememberSaveable { mutableStateOf("Todas") }
 
-    // ------------------------------------------------------
-    // PESTAÑA SELECCIONADA
-    // ------------------------------------------------------
-
-    var filtro by remember { mutableStateOf("Todas") }
-
-    val visibles = when (filtro) {
-        "Perdidos" -> reportes.filter { it.esPerdido }
-        "Encontrados" -> reportes.filter { !it.esPerdido }
-        else -> reportes
+    // Mis publicaciones + objetos que yo ayudé a recuperar / reclamé
+    val mios = remember(reportes, miUid) {
+        reportes.filter { it.usuarioId == miUid }
     }
 
+    val atendidos = remember(reportes, miUid) {
+        reportes.filter {
+            it.usuarioId != miUid && it.contraparteId == miUid
+        }
+    }
 
-    // ======================================================
-    // SCAFFOLD
-    // ======================================================
+    val perdidos = mios.count { it.esPerdido }
+    val encontrados = mios.count { !it.esPerdido }
+    val enProceso = mios.count { it.estado == EstadoReporte.EN_RECUPERACION }
+    val recuperados = mios.count { it.estado == EstadoReporte.RECUPERADO }
+
+    val visibles = remember(mios, atendidos, pestana) {
+        when (pestana) {
+            "Perdidos" -> mios.filter { it.esPerdido }
+            "Encontrados" -> mios.filter { !it.esPerdido }
+            "En proceso" -> (mios + atendidos).filter {
+                it.estado == EstadoReporte.EN_RECUPERACION
+            }
+            else -> mios
+        }.sortedByDescending { it.fechaMillis }
+    }
 
     Scaffold(
-
-        containerColor = Color.White,
-
+        containerColor = Color(0xFFF7FAF9),
         bottomBar = {
             UniFindBottomBar(
                 seleccionado = "Mis reportes",
                 onSeleccionar = onNavegar
             )
         }
+    ) { padding ->
 
-    ) { paddingValues ->
-
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
-                .statusBarsPadding()
-                .padding(bottom = paddingValues.calculateBottomPadding())
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    top = 16.dp,
-                    start = 20.dp,
-                    end = 20.dp,
-                    bottom = 24.dp
-                )
+                .padding(bottom = padding.calculateBottomPadding()),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            // ==================================================
-            // TÍTULO
-            // ==================================================
+            item {
+                EncabezadoOla(
+                    titulo = "Mis publicaciones",
+                    subtitulo = "Da seguimiento a tus reportes"
+                )
+            }
 
-            Text(
-                text = "Mis publicaciones",
-                modifier = Modifier.fillMaxWidth(),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-
-            // ==================================================
-            // PESTAÑAS
-            // ==================================================
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-
-                listOf("Todas", "Perdidos", "Encontrados").forEach { opcion ->
-
-                    PestanaReportes(
-                        modifier = Modifier.weight(1f),
-                        text = opcion,
-                        selected = filtro == opcion,
-                        onClick = { filtro = opcion }
-                    )
+            // ---------- RESUMEN ----------
+            item {
+                Aparecer(0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Resumen(Modifier.weight(1f), mios.size, "Total", UF.VerdeOscuro)
+                        Resumen(
+                            Modifier.weight(1f), enProceso, "En proceso",
+                            EstadoReporte.EN_RECUPERACION.estilo().texto
+                        )
+                        Resumen(
+                            Modifier.weight(1f), recuperados, "Recuperados",
+                            EstadoReporte.RECUPERADO.estilo().texto
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // ---------- PESTAÑAS ----------
+            item {
+                Aparecer(1) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .background(UF.Gris, RoundedCornerShape(50))
+                            .padding(4.dp)
+                    ) {
+                        listOf(
+                            "Todas" to mios.size,
+                            "Perdidos" to perdidos,
+                            "Encontrados" to encontrados,
+                            "En proceso" to (mios + atendidos).count {
+                                it.estado == EstadoReporte.EN_RECUPERACION
+                            }
+                        ).forEach { (nombre, total) ->
+                            Pestana(
+                                texto = nombre,
+                                total = total,
+                                seleccionada = pestana == nombre,
+                                modifier = Modifier.weight(1f),
+                                onClick = { pestana = nombre }
+                            )
+                        }
+                    }
+                }
+            }
 
+            // ---------- LISTA ----------
+            when {
 
-            // ==================================================
-            // LISTA
-            // ==================================================
+                cargando -> items(3) {
+                    Box(Modifier.padding(horizontal = 20.dp)) { EsqueletoTarjeta() }
+                }
 
-            if (visibles.isEmpty()) {
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 60.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-
-                    Text(text = "📭", fontSize = 44.sp)
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "No tienes reportes aquí",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextoPrincipal
-                    )
-
-                    Text(
-                        text = "Cuando publiques un objeto aparecerá en esta lista",
-                        fontSize = 14.sp,
-                        color = TextoSecundario,
-                        textAlign = TextAlign.Center
+                error != null -> item {
+                    EstadoVacio(
+                        emoji = "📡",
+                        titulo = "Sin conexión",
+                        texto = error.orEmpty(),
+                        textoBoton = "Reintentar",
+                        onBoton = { UniFindRepository.reintentar() }
                     )
                 }
 
-            } else {
+                visibles.isEmpty() -> item {
+                    EstadoVacio(
+                        emoji = if (mios.isEmpty()) "📝" else "🗂️",
+                        titulo = if (mios.isEmpty()) "Aún no has publicado nada"
+                        else "Nada en esta pestaña",
+                        texto = if (mios.isEmpty())
+                            "Cuando reportes un objeto perdido o encontrado, " +
+                                "aparecerá aquí para que le des seguimiento."
+                        else
+                            "Cambia de pestaña para ver el resto de tus reportes.",
+                        textoBoton = if (mios.isEmpty()) "Publicar ahora" else null,
+                        onBoton = { onNavegar("Publicar") }
+                    )
+                }
 
-                visibles.forEach { reporte ->
-
-                    ReporteCard(reporte = reporte)
-
-                    Spacer(modifier = Modifier.height(14.dp))
+                else -> items(visibles, key = { it.id }) { reporte ->
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .animateItem()
+                    ) {
+                        TarjetaReporte(
+                            reporte = reporte,
+                            mostrarContactos = true,
+                            onClick = { onAbrirReporte(reporte.id) }
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-
-// ==========================================================
-// PESTAÑA (TODAS / PERDIDOS / ENCONTRADOS)
-// ==========================================================
-
 @Composable
-private fun PestanaReportes(
+private fun Resumen(
     modifier: Modifier,
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
+    valor: Int,
+    texto: String,
+    color: Color
 ) {
 
-    Box(
+    val forma = RoundedCornerShape(18.dp)
+
+    Column(
         modifier = modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(50.dp))
-            .background(if (selected) VerdeOscuro else FondoGris)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-
-        Text(
-            text = text,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (selected) Color.White else TextoPrincipal,
-            maxLines = 1
-        )
-    }
-}
-
-
-// ==========================================================
-// TARJETA DE REPORTE
-// ==========================================================
-
-@Composable
-private fun ReporteCard(
-    reporte: MiReporte
-) {
-
-    val forma = RoundedCornerShape(20.dp)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
             .shadow(
-                elevation = 4.dp,
+                elevation = 3.dp,
                 shape = forma,
                 ambientColor = Color(0x22000000),
                 spotColor = Color(0x22000000)
             )
             .background(Color.White, forma)
-            .clip(forma)
-            .clickable {
-                // Después abriremos el detalle del reporte y sus contactos
-            }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        // ==================================================
-        // IMAGEN
-        // ==================================================
+        NumeroAnimado(valor = valor, color = color, tamano = 24.sp)
 
-        Box(
-            modifier = Modifier
-                .size(92.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFEDEDED)),
-            contentAlignment = Alignment.Center
-        ) {
+        Spacer(Modifier.height(2.dp))
 
-            if (reporte.imagen != null) {
-
-                Image(
-                    painter = painterResource(id = reporte.imagen),
-                    contentDescription = reporte.titulo,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-
-            } else {
-
-                Text(text = reporte.emoji, fontSize = 40.sp)
-            }
-        }
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-
-        // ==================================================
-        // INFORMACIÓN
-        // ==================================================
-
-        Column(modifier = Modifier.weight(1f)) {
-
-            Text(
-                text = reporte.titulo,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(7.dp))
-
-            EstadoReporteChip(estado = reporte.estado)
-
-            Spacer(modifier = Modifier.height(9.dp))
-
-            // TIEMPO
-            Row(verticalAlignment = Alignment.CenterVertically) {
-
-                Image(
-                    painter = painterResource(id = R.drawable.clock_solid),
-                    contentDescription = "Tiempo",
-                    modifier = Modifier.size(14.dp),
-                    colorFilter = ColorFilter.tint(Verde)
-                )
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = reporte.tiempo,
-                    fontSize = 13.sp,
-                    color = TextoSecundario,
-                    maxLines = 1
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // CONTACTOS
-            Row(verticalAlignment = Alignment.CenterVertically) {
-
-                Image(
-                    painter = painterResource(id = R.drawable.user_solid),
-                    contentDescription = "Contactos",
-                    modifier = Modifier.size(14.dp),
-                    colorFilter = ColorFilter.tint(Verde)
-                )
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = if (reporte.contactos == 1) "1 contacto" else "${reporte.contactos} contactos",
-                    fontSize = 13.sp,
-                    color = TextoSecundario,
-                    maxLines = 1
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(6.dp))
-
-        // FLECHA
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = "Ver detalle",
-            tint = TextoSecundario,
-            modifier = Modifier.size(26.dp)
+        Text(
+            text = texto,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = UF.TextoSec,
+            maxLines = 1
         )
     }
 }
 
-
-// ==========================================================
-// ETIQUETA DE ESTADO
-// ==========================================================
-
 @Composable
-private fun EstadoReporteChip(estado: String) {
+private fun Pestana(
+    texto: String,
+    total: Int,
+    seleccionada: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
 
-    val (fondo, color) = when (estado) {
-        "Perdido" -> FondoPerdido to Rojo
-        "Encontrado" -> FondoEncontrado to VerdeOscuro
-        "En recuperación" -> Color(0xFFE3ECFF) to Color(0xFF2F5BD3)
-        else -> Color(0xFFD3F0E0) to Color(0xFF0A7A4F) // Recuperado
-    }
+    val fondo by androidx.compose.animation.animateColorAsState(
+        targetValue = if (seleccionada) Color.White else Color.Transparent,
+        label = "fondoPestana"
+    )
 
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(fondo)
-            .padding(horizontal = 12.dp, vertical = 5.dp),
+        modifier = modifier
+            .alPresionar(onClick)
+            .then(
+                if (seleccionada) Modifier.shadow(2.dp, RoundedCornerShape(50))
+                else Modifier
+            )
+            .background(fondo, RoundedCornerShape(50))
+            .padding(vertical = 9.dp)
+            .animateContentSize(),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
 
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .background(color, CircleShape)
+        Text(
+            text = texto,
+            fontSize = 12.sp,
+            fontWeight = if (seleccionada) FontWeight.Bold else FontWeight.Medium,
+            color = if (seleccionada) UF.VerdeOscuro else UF.TextoSec,
+            maxLines = 1
         )
 
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(Modifier.width(4.dp))
 
         Text(
-            text = estado,
+            text = total.toString(),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = color
+            color = if (seleccionada) UF.Verde else UF.TextoSec
         )
     }
 }

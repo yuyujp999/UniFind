@@ -1,788 +1,551 @@
 package com.unifind.app
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-
-// ==========================================================
-// COLORES UNIFIND
-// ==========================================================
-
-private val Verde = Color(0xFF008F63)
-private val VerdeOscuro = Color(0xFF006B4A)
-private val Rojo = Color(0xFFE53935)
-
-private val FondoEncontrado = Color(0xFFE2F6EB)
-private val FondoGris = Color(0xFFF3F5F5)
-
-private val TextoPrincipal = Color(0xFF202124)
-private val TextoSecundario = Color(0xFF5F6368)
-private val TextoClaro = Color(0xFF8A9094)
-
+import com.unifind.app.data.Catalogo
+import com.unifind.app.data.EstadoReporte
+import com.unifind.app.data.Reporte
+import com.unifind.app.data.UniFindRepository
+import com.unifind.app.ui.Aparecer
+import com.unifind.app.ui.ChipFiltro
+import com.unifind.app.ui.EncabezadoOla
+import com.unifind.app.ui.EsqueletoTarjeta
+import com.unifind.app.ui.EstadoVacio
+import com.unifind.app.ui.TarjetaReporte
+import com.unifind.app.ui.UF
+import com.unifind.app.ui.alPresionar
+import com.unifind.app.ui.normalizar
 
 // ==========================================================
-// MODELOS
+// BUSCAR OBJETOS
+//
+// F04 - Buscar objetos (texto libre)
+// F05 - Filtrar publicaciones (tipo, categoría, ubicación,
+//       estado y orden)
 // ==========================================================
 
-private data class Categoria(
-    val nombre: String,
-    val emoji: String
-)
-
-private data class ResultadoBusqueda(
-    val titulo: String,
-    val ubicacion: String,
-    val tiempo: String,
-    val minutos: Int,          // sirve para ordenar por reciente
-    val encontrado: Boolean,
-    val categoria: String,
-    val imagen: Int? = null    // R.drawable.foto_xxx cuando tengas fotos
-)
-
-
-// ==========================================================
-// PANTALLA BUSCAR OBJETOS
-// ==========================================================
+private enum class Orden(val texto: String) {
+    RECIENTES("Más recientes"),
+    ANTIGUOS("Más antiguos")
+}
 
 @Composable
 fun BuscarScreen(
-    onNavegar: (String) -> Unit = {}
+    onNavegar: (String) -> Unit = {},
+    onAbrirReporte: (String) -> Unit = {}
 ) {
 
-    // ------------------------------------------------------
-    // CATEGORÍAS
-    //
-    // Por ahora usan emojis para que compile sin iconos extra.
-    // Si luego agregas tus iconos a res/drawable, se pueden
-    // cambiar por Image(painterResource(...)).
-    // ------------------------------------------------------
+    val reportes by UniFindRepository.reportes.collectAsState()
+    val cargando by UniFindRepository.cargando.collectAsState()
+    val error by UniFindRepository.error.collectAsState()
 
-    val categorias = listOf(
-        Categoria("Mochilas", "🎒"),
-        Categoria("Electrónicos", "📱"),
-        Categoria("Llaves", "🔑"),
-        Categoria("Ropa", "👕"),
-        Categoria("Accesorios", "👓"),
-        Categoria("Documentos", "📄"),
-        Categoria("Libros", "📚"),
-        Categoria("Otros", "⋯")
-    )
+    val foco = LocalFocusManager.current
 
+    var consulta by rememberSaveable { mutableStateOf("") }
+    var tipo by rememberSaveable { mutableStateOf("Todos") }
+    var categoria by rememberSaveable { mutableStateOf<String?>(null) }
+    var ubicacion by rememberSaveable { mutableStateOf<String?>(null) }
+    var estado by rememberSaveable { mutableStateOf<String?>(null) }
+    var orden by rememberSaveable { mutableStateOf(Orden.RECIENTES) }
+    var verFiltros by rememberSaveable { mutableStateOf(false) }
+
+    val filtrosActivos =
+        listOf(categoria, ubicacion, estado).count { it != null } +
+            (if (orden != Orden.RECIENTES) 1 else 0)
 
     // ------------------------------------------------------
-    // DATOS DE EJEMPLO (12 resultados)
+    // FILTRADO
     // ------------------------------------------------------
 
-    val todos = listOf(
-        ResultadoBusqueda("Mochila gris", "Edificio B", "Hace 5 horas", 300, false, "Mochilas"),
-        ResultadoBusqueda("Tarjeta universitaria", "Aulas", "Hace 5 horas", 301, true, "Documentos"),
-        ResultadoBusqueda("Audífonos inalámbricos", "Cafetería", "Hace 3 horas", 180, true, "Electrónicos"),
-        ResultadoBusqueda("Llaves con llavero azul", "Biblioteca", "Hace 2 horas", 120, true, "Llaves"),
-        ResultadoBusqueda("Celular Samsung", "Cafetería", "Hace 1 día", 1440, true, "Electrónicos"),
-        ResultadoBusqueda("Chamarra azul", "Gimnasio", "Hace 2 días", 2880, false, "Ropa"),
-        ResultadoBusqueda("Libro de Cálculo", "Biblioteca", "Hace 1 día", 1500, false, "Libros"),
-        ResultadoBusqueda("Lentes de sol", "Estacionamiento", "Hace 4 horas", 240, false, "Accesorios"),
-        ResultadoBusqueda("Credencial de estudiante", "Edificio A", "Hace 6 horas", 360, false, "Documentos"),
-        ResultadoBusqueda("Cargador USB-C", "Aula 5", "Hace 7 horas", 420, true, "Electrónicos"),
-        ResultadoBusqueda("Gorra negra", "Cancha", "Hace 3 días", 4320, false, "Ropa"),
-        ResultadoBusqueda("Cuaderno verde", "Cafetería", "Hace 2 días", 2900, true, "Libros")
-    )
+    val resultados: List<Reporte> = remember(
+        reportes, consulta, tipo, categoria, ubicacion, estado, orden
+    ) {
 
+        val palabras = normalizar(consulta)
+            .split(" ")
+            .filter { it.isNotBlank() }
 
-    // ------------------------------------------------------
-    // ESTADOS DE LA PANTALLA
-    // ------------------------------------------------------
+        val filtrados = reportes.filter { r ->
 
-    var consulta by remember { mutableStateOf("") }
-    var estado by remember { mutableStateOf("Todos") }
-    var categoriaSeleccionada by remember { mutableStateOf<String?>(null) }
-    var orden by remember { mutableStateOf("Más recientes") }
-    var menuAbierto by remember { mutableStateOf(false) }
+            val coincideTexto = palabras.isEmpty() || run {
+                val pajar = normalizar(
+                    "${r.titulo} ${r.descripcion} ${r.categoria} ${r.ubicacion}"
+                )
+                palabras.all { pajar.contains(it) }
+            }
 
-    val favoritos = remember { mutableStateListOf<String>() }
-
-
-    // ------------------------------------------------------
-    // FILTRADO Y ORDEN
-    // ------------------------------------------------------
-
-    val resultados = todos
-        .filter {
-            when (estado) {
-                "Perdidos" -> !it.encontrado
-                "Encontrados" -> it.encontrado
+            val coincideTipo = when (tipo) {
+                "Perdidos" -> r.esPerdido
+                "Encontrados" -> !r.esPerdido
                 else -> true
             }
-        }
-        .filter {
-            categoriaSeleccionada == null || it.categoria == categoriaSeleccionada
-        }
-        .filter {
-            val texto = consulta.trim()
-            texto.isEmpty() ||
-                    it.titulo.contains(texto, ignoreCase = true) ||
-                    it.ubicacion.contains(texto, ignoreCase = true) ||
-                    it.categoria.contains(texto, ignoreCase = true)
-        }
-        .let { lista ->
-            when (orden) {
-                "Más antiguos" -> lista.sortedByDescending { it.minutos }
-                "Nombre (A-Z)" -> lista.sortedBy { it.titulo }
-                else -> lista.sortedBy { it.minutos }
-            }
+
+            coincideTexto &&
+                coincideTipo &&
+                (categoria == null || r.categoria == categoria) &&
+                (ubicacion == null || r.ubicacion == ubicacion) &&
+                (estado == null || r.estado.etiqueta == estado)
         }
 
+        if (orden == Orden.RECIENTES) {
+            filtrados.sortedByDescending { it.fechaMillis }
+        } else {
+            filtrados.sortedBy { it.fechaMillis }
+        }
+    }
+
+    fun limpiar() {
+        consulta = ""
+        tipo = "Todos"
+        categoria = null
+        ubicacion = null
+        estado = null
+        orden = Orden.RECIENTES
+    }
 
     // ======================================================
-    // SCAFFOLD
+    // PANTALLA
     // ======================================================
 
     Scaffold(
-
-        containerColor = Color.White,
-
+        containerColor = Color(0xFFF7FAF9),
         bottomBar = {
             UniFindBottomBar(
                 seleccionado = "Buscar",
                 onSeleccionar = onNavegar
             )
         }
-
-    ) { paddingValues ->
+    ) { padding ->
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
-                .statusBarsPadding()
-                .padding(bottom = paddingValues.calculateBottomPadding())
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    top = 16.dp,
-                    start = 20.dp,
-                    end = 20.dp,
-                    bottom = 24.dp
-                )
+                .padding(bottom = padding.calculateBottomPadding())
+                .imePadding()
         ) {
 
-            // ==================================================
-            // TÍTULO
-            // ==================================================
+            Box {
 
-            Text(
-                text = "Buscar objetos",
-                modifier = Modifier.fillMaxWidth(),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-
-            // ==================================================
-            // BUSCADOR + BOTÓN DE FILTROS
-            // ==================================================
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                OutlinedTextField(
-                    value = consulta,
-                    onValueChange = { consulta = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    singleLine = true,
-
-                    leadingIcon = {
-                        Image(
-                            painter = painterResource(id = R.drawable.magnifying_glass_solid),
-                            contentDescription = "Buscar",
-                            modifier = Modifier.size(20.dp),
-                            colorFilter = ColorFilter.tint(TextoClaro)
-                        )
-                    },
-
-                    trailingIcon = if (consulta.isNotEmpty()) {
-                        {
-                            Text(
-                                text = "✕",
-                                fontSize = 16.sp,
-                                color = TextoClaro,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50.dp))
-                                    .clickable { consulta = "" }
-                                    .padding(10.dp)
-                            )
-                        }
-                    } else {
-                        null
-                    },
-
-                    placeholder = {
-                        Text(
-                            text = "Buscar por palabra clave...",
-                            fontSize = 15.sp,
-                            color = TextoClaro
-                        )
-                    },
-
-                    textStyle = TextStyle(
-                        color = Color.Black,
-                        fontSize = 15.sp
-                    ),
-
-                    shape = RoundedCornerShape(16.dp),
-
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black,
-                        focusedBorderColor = Verde,
-                        unfocusedBorderColor = Color(0xFFE3E6E7),
-                        cursorColor = Verde,
-                        focusedContainerColor = FondoGris,
-                        unfocusedContainerColor = FondoGris
-                    )
+                EncabezadoOla(
+                    titulo = "Buscar objetos",
+                    subtitulo = "Encuentra lo que perdiste o ayuda a otros",
+                    alto = 150.dp
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // BOTÓN DE FILTROS
+                // Barra de búsqueda que flota sobre el borde de la ola
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(FondoGris)
-                        .clickable {
-                            // Después abriremos filtros avanzados
-                        },
-                    contentAlignment = Alignment.Center
+                        .align(Alignment.BottomCenter)
+                        .offset(y = 26.dp)
+                        .padding(horizontal = 20.dp)
                 ) {
-                    FiltroIcono(color = TextoPrincipal)
-                }
-            }
 
-            Spacer(modifier = Modifier.height(18.dp))
-
-
-            // ==================================================
-            // FILTROS DE ESTADO
-            // ==================================================
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-
-                listOf("Todos", "Perdidos", "Encontrados").forEach { opcion ->
-
-                    EstadoChip(
-                        modifier = Modifier.weight(1f),
-                        text = opcion,
-                        selected = estado == opcion,
-                        onClick = { estado = opcion }
+                    CampoBusqueda(
+                        valor = consulta,
+                        onCambio = { consulta = it },
+                        filtrosActivos = filtrosActivos,
+                        filtrosVisibles = verFiltros,
+                        onFiltros = { verFiltros = !verFiltros },
+                        onBuscar = { foco.clearFocus() }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(Modifier.height(38.dp))
 
-
-            // ==================================================
-            // CATEGORÍAS (CUADRÍCULA 4 x 2)
-            // ==================================================
-
-            categorias.chunked(4).forEach { fila ->
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-
-                    fila.forEach { categoria ->
-
-                        CategoriaItem(
-                            modifier = Modifier.weight(1f),
-                            categoria = categoria,
-                            seleccionada = categoriaSeleccionada == categoria.nombre,
-                            onClick = {
-                                // Si tocas la misma categoría, se quita el filtro
-                                categoriaSeleccionada =
-                                    if (categoriaSeleccionada == categoria.nombre) {
-                                        null
-                                    } else {
-                                        categoria.nombre
-                                    }
-                            }
-                        )
-                    }
+            // ---------- TIPO ----------
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(listOf("Todos", "Perdidos", "Encontrados")) { opcion ->
+                    ChipFiltro(
+                        texto = opcion,
+                        seleccionado = tipo == opcion,
+                        onClick = { tipo = opcion }
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // ---------- PANEL DE FILTROS (F05) ----------
+            AnimatedVisibility(
+                visible = verFiltros,
+                enter = expandVertically(tween(300)) + fadeIn(tween(300)),
+                exit = shrinkVertically(tween(250)) + fadeOut(tween(200))
+            ) {
 
+                PanelFiltros(
+                    categoria = categoria,
+                    onCategoria = { categoria = if (categoria == it) null else it },
+                    ubicacion = ubicacion,
+                    onUbicacion = { ubicacion = if (ubicacion == it) null else it },
+                    estado = estado,
+                    onEstado = { estado = if (estado == it) null else it },
+                    orden = orden,
+                    onOrden = { orden = it }
+                )
+            }
 
-            // ==================================================
-            // ENCABEZADO DE RESULTADOS + ORDENAR
-            // ==================================================
+            Spacer(Modifier.height(12.dp))
 
+            // ---------- CONTADOR ----------
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp)
+                    .animateContentSize(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
                 Text(
-                    text = "Resultados (${resultados.size})",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal
+                    text = if (cargando) "Buscando…"
+                    else "${resultados.size} resultado" +
+                        if (resultados.size == 1) "" else "s",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = UF.TextoSec,
+                    modifier = Modifier.weight(1f)
                 )
 
-                Box {
+                if (consulta.isNotEmpty() || tipo != "Todos" || filtrosActivos > 0) {
 
-                    Row(
+                    Text(
+                        text = "Limpiar",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UF.Verde,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFFDADEDF), RoundedCornerShape(12.dp))
-                            .clickable { menuAbierto = true }
-                            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                            .alPresionar { limpiar() }
+                            .padding(4.dp)
+                    )
+                }
+            }
 
-                        Text(
-                            text = "Ordenar",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextoPrincipal
-                        )
+            Spacer(Modifier.height(8.dp))
 
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Ordenar",
-                            tint = TextoPrincipal,
-                            modifier = Modifier.size(20.dp)
-                        )
+            // ---------- RESULTADOS ----------
+            when {
+
+                cargando -> Column(
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    repeat(4) { EsqueletoTarjeta() }
+                }
+
+                error != null -> EstadoVacio(
+                    emoji = "📡",
+                    titulo = "Sin conexión",
+                    texto = error.orEmpty(),
+                    textoBoton = "Reintentar",
+                    onBoton = { UniFindRepository.reintentar() }
+                )
+
+                resultados.isEmpty() -> EstadoVacio(
+                    emoji = "🔍",
+                    titulo = "No encontramos nada",
+                    texto = if (reportes.isEmpty())
+                        "Aún no hay publicaciones. ¡Sé la primera persona en publicar!"
+                    else
+                        "Prueba con otras palabras o quita algunos filtros.",
+                    textoBoton = if (reportes.isEmpty()) "Publicar" else "Limpiar filtros",
+                    onBoton = {
+                        if (reportes.isEmpty()) onNavegar("Publicar") else limpiar()
                     }
+                )
 
-                    DropdownMenu(
-                        expanded = menuAbierto,
-                        onDismissRequest = { menuAbierto = false },
-                        modifier = Modifier.background(Color.White)
-                    ) {
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 20.dp, end = 20.dp, bottom = 24.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
 
-                        listOf("Más recientes", "Más antiguos", "Nombre (A-Z)").forEach { opcion ->
+                    items(resultados, key = { it.id }) { reporte ->
 
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = opcion,
-                                        fontSize = 15.sp,
-                                        fontWeight = if (orden == opcion) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (orden == opcion) VerdeOscuro else TextoPrincipal
-                                    )
-                                },
-                                onClick = {
-                                    orden = opcion
-                                    menuAbierto = false
-                                }
+                        Aparecer(
+                            indice = resultados.indexOf(reporte).coerceAtMost(6),
+                            modifier = Modifier.animateItem()
+                        ) {
+                            TarjetaReporte(
+                                reporte = reporte,
+                                onClick = { onAbrirReporte(reporte.id) }
                             )
                         }
                     }
                 }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+// ==========================================================
+// CAMPO DE BÚSQUEDA (texto en negro)
+// ==========================================================
 
+@Composable
+private fun CampoBusqueda(
+    valor: String,
+    onCambio: (String) -> Unit,
+    filtrosActivos: Int,
+    filtrosVisibles: Boolean,
+    onFiltros: () -> Unit,
+    onBuscar: () -> Unit
+) {
 
-            // ==================================================
-            // LISTA DE RESULTADOS
-            // ==================================================
+    val forma = RoundedCornerShape(28.dp)
 
-            if (resultados.isEmpty()) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .shadow(
+                elevation = 10.dp,
+                shape = forma,
+                ambientColor = Color(0x33006B4A),
+                spotColor = Color(0x33006B4A)
+            )
+            .background(Color.White, forma)
+            .padding(start = 18.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
 
-                Column(
+        Image(
+            painter = painterResource(id = R.drawable.magnifying_glass_solid),
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            colorFilter = ColorFilter.tint(UF.Verde)
+        )
+
+        Spacer(Modifier.width(12.dp))
+
+        Box(modifier = Modifier.weight(1f)) {
+
+            if (valor.isEmpty()) {
+                Text(
+                    text = "Mochila, llaves, audífonos…",
+                    fontSize = 16.sp,
+                    color = Color(0xFF9AA3A6),
+                    maxLines = 1
+                )
+            }
+
+            BasicTextField(
+                value = valor,
+                onValueChange = onCambio,
+                singleLine = true,
+                textStyle = TextStyle(
+                    fontSize = 16.sp,
+                    color = Color.Black
+                ),
+                cursorBrush = SolidColor(UF.Verde),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onBuscar() }),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        if (valor.isNotEmpty()) {
+
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .alPresionar { onCambio("") },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✕", fontSize = 16.sp, color = UF.TextoSec)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .alPresionar(onFiltros)
+                .background(
+                    if (filtrosVisibles || filtrosActivos > 0) UF.Verde else UF.Menta,
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+
+            Image(
+                painter = painterResource(id = R.drawable.sliders_solid),
+                contentDescription = "Filtros",
+                modifier = Modifier.size(20.dp),
+                colorFilter = ColorFilter.tint(
+                    if (filtrosVisibles || filtrosActivos > 0) Color.White
+                    else UF.VerdeOscuro
+                )
+            )
+
+            if (filtrosActivos > 0) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .align(Alignment.TopEnd)
+                        .size(16.dp)
+                        .background(UF.Rojo, CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-
-                    Text(text = "🔍", fontSize = 40.sp)
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
                     Text(
-                        text = "No encontramos objetos",
-                        fontSize = 17.sp,
+                        text = filtrosActivos.toString(),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextoPrincipal
+                        color = Color.White
                     )
-
-                    Text(
-                        text = "Prueba con otra palabra o quita algún filtro",
-                        fontSize = 14.sp,
-                        color = TextoSecundario,
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-            } else {
-
-                resultados.forEach { resultado ->
-
-                    ResultadoCard(
-                        resultado = resultado,
-                        favorito = favoritos.contains(resultado.titulo),
-                        onFavorito = {
-                            if (favoritos.contains(resultado.titulo)) {
-                                favoritos.remove(resultado.titulo)
-                            } else {
-                                favoritos.add(resultado.titulo)
-                            }
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
                 }
             }
         }
     }
 }
 
-
 // ==========================================================
-// CHIP DE ESTADO (TODOS / PERDIDOS / ENCONTRADOS)
-// ==========================================================
-
-@Composable
-private fun EstadoChip(
-    modifier: Modifier,
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-
-    Box(
-        modifier = modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(50.dp))
-            .background(if (selected) VerdeOscuro else FondoGris)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-
-        Text(
-            text = text,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (selected) Color.White else TextoPrincipal,
-            maxLines = 1
-        )
-    }
-}
-
-
-// ==========================================================
-// CATEGORÍA
+// PANEL DE FILTROS (F05)
 // ==========================================================
 
 @Composable
-private fun CategoriaItem(
-    modifier: Modifier,
-    categoria: Categoria,
-    seleccionada: Boolean,
-    onClick: () -> Unit
+private fun PanelFiltros(
+    categoria: String?,
+    onCategoria: (String) -> Unit,
+    ubicacion: String?,
+    onUbicacion: (String) -> Unit,
+    estado: String?,
+    onEstado: (String) -> Unit,
+    orden: Orden,
+    onOrden: (Orden) -> Unit
 ) {
+
+    val forma = RoundedCornerShape(22.dp)
 
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .clickable { onClick() }
-            .padding(vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-
-        Box(
-            modifier = Modifier
-                .size(68.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(if (seleccionada) FondoEncontrado else FondoGris)
-                .border(
-                    width = if (seleccionada) 2.dp else 0.dp,
-                    color = if (seleccionada) Verde else Color.Transparent,
-                    shape = RoundedCornerShape(18.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-
-            Text(
-                text = categoria.emoji,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal
-            )
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = categoria.nombre,
-            fontSize = 12.sp,
-            fontWeight = if (seleccionada) FontWeight.Bold else FontWeight.Medium,
-            color = if (seleccionada) VerdeOscuro else TextoPrincipal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-
-// ==========================================================
-// TARJETA DE RESULTADO
-// ==========================================================
-
-@Composable
-private fun ResultadoCard(
-    resultado: ResultadoBusqueda,
-    favorito: Boolean,
-    onFavorito: () -> Unit
-) {
-
-    val forma = RoundedCornerShape(20.dp)
-
-    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
             .shadow(
-                elevation = 4.dp,
+                elevation = 3.dp,
                 shape = forma,
                 ambientColor = Color(0x22000000),
                 spotColor = Color(0x22000000)
             )
             .background(Color.White, forma)
-            .clip(forma)
-            .clickable {
-                // Después abriremos el detalle del objeto
-            }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // IMAGEN
-        Box(
-            modifier = Modifier
-                .size(88.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFEDEDED)),
-            contentAlignment = Alignment.Center
-        ) {
-
-            if (resultado.imagen != null) {
-
-                Image(
-                    painter = painterResource(id = resultado.imagen),
-                    contentDescription = resultado.titulo,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                )
-
-            } else {
-
-                Image(
-                    painter = painterResource(id = R.drawable.file_solid),
-                    contentDescription = resultado.titulo,
-                    modifier = Modifier.size(34.dp),
-                    colorFilter = ColorFilter.tint(Color(0xFFB0B5B8))
+        FilaFiltro("Categoría") {
+            items(Catalogo.categorias) { c ->
+                ChipFiltro(
+                    texto = "${c.emoji} ${c.nombre}",
+                    seleccionado = categoria == c.nombre,
+                    onClick = { onCategoria(c.nombre) }
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(14.dp))
-
-        // INFORMACIÓN
-        Column(modifier = Modifier.weight(1f)) {
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                StatusChip(encontrado = resultado.encontrado)
-
-                Icon(
-                    imageVector = if (favorito) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Favorito",
-                    tint = if (favorito) Rojo else TextoClaro,
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(RoundedCornerShape(50.dp))
-                        .clickable { onFavorito() }
+        FilaFiltro("Ubicación") {
+            items(Catalogo.ubicaciones) { u ->
+                ChipFiltro(
+                    texto = u,
+                    seleccionado = ubicacion == u,
+                    onClick = { onUbicacion(u) }
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(7.dp))
-
-            Text(
-                text = resultado.titulo,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // UBICACIÓN
-            Row(verticalAlignment = Alignment.CenterVertically) {
-
-                Image(
-                    painter = painterResource(id = R.drawable.location_dot_solid),
-                    contentDescription = "Ubicación",
-                    modifier = Modifier.size(14.dp),
-                    colorFilter = ColorFilter.tint(Verde)
-                )
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = resultado.ubicacion,
-                    fontSize = 13.sp,
-                    color = TextoSecundario,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        FilaFiltro("Estado") {
+            items(EstadoReporte.entries.toList()) { e ->
+                ChipFiltro(
+                    texto = e.corto,
+                    seleccionado = estado == e.etiqueta,
+                    onClick = { onEstado(e.etiqueta) }
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // HORA
-            Row(verticalAlignment = Alignment.CenterVertically) {
-
-                Image(
-                    painter = painterResource(id = R.drawable.clock_solid),
-                    contentDescription = "Hora",
-                    modifier = Modifier.size(14.dp),
-                    colorFilter = ColorFilter.tint(Verde)
-                )
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = resultado.tiempo,
-                    fontSize = 13.sp,
-                    color = TextoSecundario,
-                    maxLines = 1
+        FilaFiltro("Ordenar por") {
+            items(Orden.entries.toList()) { o ->
+                ChipFiltro(
+                    texto = o.texto,
+                    seleccionado = orden == o,
+                    onClick = { onOrden(o) }
                 )
             }
         }
     }
 }
 
-
-// ==========================================================
-// ICONO DE FILTROS (dibujado, no necesita archivo)
-// ==========================================================
-
 @Composable
-private fun FiltroIcono(color: Color) {
+private fun FilaFiltro(
+    titulo: String,
+    contenido: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
+) {
 
-    Canvas(modifier = Modifier.size(24.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
 
-        val grosor = 2.dp.toPx()
-        val radio = 4.dp.toPx()
-
-        // Cada par es: altura de la línea, posición de la bolita
-        val lineas = listOf(
-            0.20f to 0.68f,
-            0.50f to 0.30f,
-            0.80f to 0.60f
+        Text(
+            text = titulo,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = UF.VerdeOscuro,
+            modifier = Modifier.padding(horizontal = 16.dp)
         )
 
-        lineas.forEach { (alto, posicion) ->
-
-            val y = size.height * alto
-            val x = size.width * posicion
-
-            drawLine(
-                color = color,
-                start = Offset(0f, y),
-                end = Offset(size.width, y),
-                strokeWidth = grosor,
-                cap = StrokeCap.Round
-            )
-
-            drawCircle(
-                color = FondoGris,
-                radius = radio,
-                center = Offset(x, y)
-            )
-
-            drawCircle(
-                color = color,
-                radius = radio,
-                center = Offset(x, y),
-                style = Stroke(width = grosor)
-            )
-        }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = contenido
+        )
     }
 }

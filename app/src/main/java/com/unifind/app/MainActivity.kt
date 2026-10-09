@@ -3,10 +3,14 @@ package com.unifind.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.google.firebase.auth.FirebaseAuth
+import com.unifind.app.data.UniFindRepository
 import com.unifind.app.ui.theme.UniFindTheme
 
 class MainActivity : ComponentActivity() {
@@ -14,12 +18,35 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        enableEdgeToEdge()
+
         setContent {
 
             UniFindTheme {
 
-                var pantallaActual by remember {
-                    mutableStateOf("inicio")
+                // Si ya había una sesión iniciada, entra directo a la app.
+                var pantallaActual by rememberSaveable {
+                    mutableStateOf(
+                        if (FirebaseAuth.getInstance().currentUser != null) "home"
+                        else "inicio"
+                    )
+                }
+
+                // ==========================================
+                // AL ENTRAR A LA APP:
+                //  - empieza a escuchar los reportes
+                //  - crea/actualiza el perfil en "usuarios"
+                //  - crea las colecciones base si no existen
+                // ==========================================
+
+                LaunchedEffect(pantallaActual) {
+
+                    if (pantallaActual == "home") {
+
+                        UniFindRepository.iniciar()
+                        UniFindRepository.asegurarPerfil()
+                        UniFindRepository.inicializarBaseDeDatos()
+                    }
                 }
 
                 when (pantallaActual) {
@@ -42,7 +69,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-
                     // ==========================================
                     // PANTALLA DE INICIAR SESIÓN
                     // ==========================================
@@ -59,16 +85,11 @@ class MainActivity : ComponentActivity() {
                                 pantallaActual = "registro"
                             },
 
-                            // ==================================
-                            // AL PRESIONAR INICIAR SESIÓN
-                            // ==================================
-
                             onLogin = {
                                 pantallaActual = "home"
                             }
                         )
                     }
-
 
                     // ==========================================
                     // PANTALLA DE REGISTRO
@@ -84,18 +105,23 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-
                     // ==========================================
-                    // PANTALLA PRINCIPAL DE UNIFIND
-                    //
-                    // PantallaPrincipal() cambia entre
-                    // Inicio (HomeScreen) y Buscar (BuscarScreen)
-                    // con la barra inferior.
+                    // APP PRINCIPAL
                     // ==========================================
 
                     "home" -> {
 
-                        PantallaPrincipal()
+                        PantallaPrincipal(
+
+                            onCerrarSesion = {
+
+                                UniFindRepository.detener()
+
+                                FirebaseAuth.getInstance().signOut()
+
+                                pantallaActual = "inicio"
+                            }
+                        )
                     }
                 }
             }

@@ -1,8 +1,10 @@
 package com.unifind.app
 
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,451 +20,463 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.ExitToApp
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.List
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-
-// ==========================================================
-// COLORES UNIFIND
-// ==========================================================
-
-private val Verde = Color(0xFF008F63)
-private val VerdeOscuro = Color(0xFF006B4A)
-private val Rojo = Color(0xFFE53935)
-
-private val FondoPerdido = Color(0xFFFFE9E9)
-private val FondoEncontrado = Color(0xFFE2F6EB)
-private val FondoGris = Color(0xFFF3F5F5)
-
-private val TextoPrincipal = Color(0xFF202124)
-private val TextoSecundario = Color(0xFF5F6368)
-
-private val MoradoAvatar = Color(0xFF6C63C7)
-
+import com.google.firebase.auth.FirebaseAuth
+import com.unifind.app.data.EstadoReporte
+import com.unifind.app.data.UniFindRepository
+import com.unifind.app.ui.Aparecer
+import com.unifind.app.ui.NumeroAnimado
+import com.unifind.app.ui.UF
+import com.unifind.app.ui.alPresionar
 
 // ==========================================================
-// PANTALLA PERFIL
+// PERFIL
+// Datos reales de la cuenta y estadísticas del usuario.
 // ==========================================================
 
 @Composable
 fun PerfilScreen(
     onNavegar: (String) -> Unit = {},
-    nombre: String = "Ana García",
-    correo: String = "ana@universidad.edu.mx",
-    reportes: Int = 4,
-    recuperados: Int = 1,
-    contactos: Int = 4,
     onCerrarSesion: () -> Unit = {}
 ) {
 
-    var mostrarDialogo by remember { mutableStateOf(false) }
+    val contexto = LocalContext.current
 
-    val inicial = nombre.trim().firstOrNull()?.uppercase() ?: "?"
+    val reportes by UniFindRepository.reportes.collectAsState()
+
+    val usuario = FirebaseAuth.getInstance().currentUser
+
+    val nombre = usuario?.displayName
+        ?.takeIf { it.isNotBlank() }
+        ?: usuario?.email?.substringBefore("@")
+        ?: "Usuario"
+
+    val correo = usuario?.email.orEmpty()
+
+    val miUid = UniFindRepository.miUid
+
+    val mios = remember(reportes, miUid) {
+        reportes.filter { it.usuarioId == miUid }
+    }
+
+    val recuperados = mios.count { it.estado == EstadoReporte.RECUPERADO }
+    val contactos = mios.sumOf { it.numContactos }
+
+    var dialogoSalir by remember { mutableStateOf(false) }
+    var dialogoWhatsapp by remember { mutableStateOf(false) }
+    var dialogoAyuda by remember { mutableStateOf(false) }
+
+    var whatsapp by remember {
+        mutableStateOf(
+            contexto
+                .getSharedPreferences("unifind", Context.MODE_PRIVATE)
+                .getString("whatsapp", "")
+                .orEmpty()
+        )
+    }
 
     Scaffold(
-
         containerColor = Color.White,
-
         bottomBar = {
             UniFindBottomBar(
                 seleccionado = "Perfil",
                 onSeleccionar = onNavegar
             )
         }
-
-    ) { paddingValues ->
+    ) { padding ->
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
-                .padding(bottom = paddingValues.calculateBottomPadding())
+                .padding(bottom = padding.calculateBottomPadding())
                 .verticalScroll(rememberScrollState())
         ) {
 
-            // ==================================================
-            // ENCABEZADO CON DEGRADADO SUAVE
-            // ==================================================
-
+            // ---------- ENCABEZADO ----------
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        Brush.verticalGradient(
-                            colors = listOf(FondoEncontrado, Color.White)
-                        )
+                        Brush.verticalGradient(listOf(UF.Menta, Color.White))
                     )
                     .statusBarsPadding()
                     .padding(top = 28.dp, bottom = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-                // AVATAR
-                Box(
-                    modifier = Modifier
-                        .size(98.dp)
-                        .shadow(10.dp, CircleShape, ambientColor = MoradoAvatar, spotColor = MoradoAvatar)
-                        .background(MoradoAvatar, CircleShape)
-                        .border(4.dp, Color.White, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = inicial,
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                Aparecer(0) {
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                        Box(
+                            modifier = Modifier
+                                .size(98.dp)
+                                .shadow(
+                                    10.dp, CircleShape,
+                                    ambientColor = UF.Verde, spotColor = UF.Verde
+                                )
+                                .background(UF.Verde, CircleShape)
+                                .border(4.dp, Color.White, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = nombre.firstOrNull()?.uppercase() ?: "U",
+                                fontSize = 40.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Text(
+                            text = nombre,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = UF.Texto
+                        )
+
+                        Text(
+                            text = correo,
+                            fontSize = 14.sp,
+                            color = UF.TextoSec
+                        )
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = nombre,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = correo,
-                    fontSize = 14.sp,
-                    color = TextoSecundario
-                )
             }
 
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
 
-            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                Spacer(Modifier.height(4.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // ---------- ESTADÍSTICAS ----------
+                Aparecer(1) {
 
+                    val forma = RoundedCornerShape(20.dp)
 
-                // ==================================================
-                // ESTADÍSTICAS
-                // ==================================================
-
-                val formaStats = RoundedCornerShape(20.dp)
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(
-                            elevation = 4.dp,
-                            shape = formaStats,
-                            ambientColor = Color(0x22000000),
-                            spotColor = Color(0x22000000)
-                        )
-                        .background(Color.White, formaStats)
-                        .padding(vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    EstadisticaPerfil(Modifier.weight(1f), reportes.toString(), "Reportes")
-
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .width(1.dp)
-                            .height(34.dp)
-                            .background(FondoGris)
-                    )
+                            .fillMaxWidth()
+                            .shadow(
+                                4.dp, forma,
+                                ambientColor = Color(0x22000000),
+                                spotColor = Color(0x22000000)
+                            )
+                            .background(Color.White, forma)
+                            .padding(vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
 
-                    EstadisticaPerfil(Modifier.weight(1f), recuperados.toString(), "Recuperados")
+                        Estadistica(Modifier.weight(1f), mios.size, "Reportes")
 
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(34.dp)
-                            .background(FondoGris)
-                    )
-
-                    EstadisticaPerfil(Modifier.weight(1f), contactos.toString(), "Contactos")
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-
-                // ==================================================
-                // MENÚ
-                // ==================================================
-
-                val formaMenu = RoundedCornerShape(20.dp)
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(
-                            elevation = 4.dp,
-                            shape = formaMenu,
-                            ambientColor = Color(0x22000000),
-                            spotColor = Color(0x22000000)
+                        Box(
+                            Modifier
+                                .width(1.dp)
+                                .height(34.dp)
+                                .background(UF.Gris)
                         )
-                        .background(Color.White, formaMenu)
-                        .clip(formaMenu)
-                ) {
 
-                    ItemPerfil(
-                        icono = Icons.Outlined.List,
-                        texto = "Mis publicaciones",
-                        onClick = { onNavegar("Mis reportes") }
-                    )
+                        Estadistica(Modifier.weight(1f), recuperados, "Recuperados")
 
-                    DivisorPerfil()
+                        Box(
+                            Modifier
+                                .width(1.dp)
+                                .height(34.dp)
+                                .background(UF.Gris)
+                        )
 
-                    ItemPerfil(
-                        icono = Icons.Outlined.Notifications,
-                        texto = "Notificaciones",
-                        onClick = { /* Pendiente */ }
-                    )
-
-                    DivisorPerfil()
-
-                    ItemPerfil(
-                        icono = Icons.Outlined.Edit,
-                        texto = "Editar perfil",
-                        onClick = { /* Pendiente */ }
-                    )
-
-                    DivisorPerfil()
-
-                    ItemPerfil(
-                        icono = Icons.Outlined.Lock,
-                        texto = "Cambiar contraseña",
-                        onClick = { /* Pendiente */ }
-                    )
-
-                    DivisorPerfil()
-
-                    ItemPerfil(
-                        icono = Icons.Outlined.Info,
-                        texto = "Ayuda",
-                        onClick = { /* Pendiente */ }
-                    )
+                        Estadistica(Modifier.weight(1f), contactos, "Contactos")
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                // ---------- OPCIONES ----------
+                Aparecer(2) {
 
+                    val forma = RoundedCornerShape(20.dp)
 
-                // ==================================================
-                // CERRAR SESIÓN
-                // ==================================================
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(
+                                4.dp, forma,
+                                ambientColor = Color(0x22000000),
+                                spotColor = Color(0x22000000)
+                            )
+                            .background(Color.White, forma)
+                    ) {
 
-                val formaSalir = RoundedCornerShape(20.dp)
+                        ItemPerfil(
+                            icono = R.drawable.file_solid,
+                            titulo = "Mis publicaciones",
+                            detalle = "${mios.size} en total"
+                        ) { onNavegar("Mis reportes") }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(formaSalir)
-                        .background(FondoPerdido)
-                        .border(1.dp, Rojo.copy(alpha = 0.35f), formaSalir)
-                        .clickable { mostrarDialogo = true }
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
+                        Divisor()
 
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
-                        contentDescription = "Cerrar sesión",
-                        tint = Rojo,
-                        modifier = Modifier.size(22.dp)
-                    )
+                        ItemPerfil(
+                            icono = R.drawable.square_whatsapp_brands_solid,
+                            titulo = "Mi WhatsApp",
+                            detalle = if (whatsapp.length == 10) whatsapp
+                            else "Agrégalo para que te contacten",
+                            sinTinte = true
+                        ) { dialogoWhatsapp = true }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                        Divisor()
 
-                    Text(
-                        text = "Cerrar sesión",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Rojo
-                    )
+                        ItemPerfil(
+                            icono = R.drawable.eye_solid,
+                            titulo = "¿Cómo funciona UniFind?",
+                            detalle = "Reporta, busca y recupera"
+                        ) { dialogoAyuda = true }
+
+                        Divisor()
+
+                        ItemPerfil(
+                            icono = R.drawable.unlock_solid,
+                            titulo = "Cerrar sesión",
+                            detalle = "Salir de tu cuenta",
+                            colorTitulo = UF.Rojo
+                        ) { dialogoSalir = true }
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = "UniFind · Versión 1.0",
-                    modifier = Modifier.fillMaxWidth(),
+                    text = "UniFind · UT Santa Catarina, Campus Montemorelos",
                     fontSize = 12.sp,
-                    color = TextoSecundario,
-                    textAlign = TextAlign.Center
+                    color = UF.TextoSec,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 
+    // ---------- DIÁLOGOS ----------
 
-    // ======================================================
-    // CONFIRMACIÓN PARA CERRAR SESIÓN
-    // ======================================================
-
-    if (mostrarDialogo) {
+    if (dialogoSalir) {
 
         AlertDialog(
-            onDismissRequest = { mostrarDialogo = false },
+            onDismissRequest = { dialogoSalir = false },
             containerColor = Color.White,
-            title = {
-                Text(
-                    text = "¿Cerrar sesión?",
-                    fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal
-                )
-            },
-            text = {
-                Text(
-                    text = "Tendrás que iniciar sesión de nuevo para ver tus reportes.",
-                    color = TextoSecundario
-                )
-            },
+            title = { Text("¿Cerrar sesión?", fontWeight = FontWeight.Bold) },
+            text = { Text("Tendrás que iniciar sesión otra vez para usar UniFind.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        mostrarDialogo = false
-                        onCerrarSesion()
-                    }
-                ) {
-                    Text(text = "Cerrar sesión", color = Rojo, fontWeight = FontWeight.Bold)
+                TextButton(onClick = {
+                    dialogoSalir = false
+                    onCerrarSesion()
+                }) {
+                    Text("Cerrar sesión", color = UF.Rojo, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { mostrarDialogo = false }) {
-                    Text(text = "Cancelar", color = VerdeOscuro, fontWeight = FontWeight.Bold)
+                TextButton(onClick = { dialogoSalir = false }) {
+                    Text("Cancelar", color = UF.TextoSec)
+                }
+            }
+        )
+    }
+
+    if (dialogoWhatsapp) {
+
+        var texto by remember { mutableStateOf(whatsapp) }
+
+        AlertDialog(
+            onDismissRequest = { dialogoWhatsapp = false },
+            containerColor = Color.White,
+            title = { Text("Mi WhatsApp", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                    Text(
+                        "Se usa para que otras personas te contacten cuando " +
+                            "publiques o reclames un objeto.",
+                        fontSize = 14.sp,
+                        color = UF.TextoSec
+                    )
+
+                    OutlinedTextField(
+                        value = texto,
+                        onValueChange = {
+                            texto = it.filter { c -> c.isDigit() }.take(10)
+                        },
+                        label = { Text("10 dígitos") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = UF.Verde,
+                            cursorColor = UF.Verde,
+                            focusedLabelColor = UF.VerdeOscuro
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = texto.length == 10,
+                    onClick = {
+
+                        whatsapp = texto
+
+                        contexto
+                            .getSharedPreferences("unifind", Context.MODE_PRIVATE)
+                            .edit()
+                            .putString("whatsapp", texto)
+                            .apply()
+
+                        UniFindRepository.guardarWhatsapp(texto)
+
+                        Toast.makeText(contexto, "Número guardado", Toast.LENGTH_SHORT).show()
+
+                        dialogoWhatsapp = false
+                    }
+                ) {
+                    Text("Guardar", color = UF.Verde, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { dialogoWhatsapp = false }) {
+                    Text("Cancelar", color = UF.TextoSec)
+                }
+            }
+        )
+    }
+
+    if (dialogoAyuda) {
+
+        AlertDialog(
+            onDismissRequest = { dialogoAyuda = false },
+            containerColor = Color.White,
+            title = { Text("¿Cómo funciona?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "1. Publica lo que perdiste o encontraste.\n\n" +
+                        "2. Busca en la lista; si alguien ya lo reportó, " +
+                        "toca «Yo lo encontré» o «Es mío».\n\n" +
+                        "3. Habla con la otra persona por WhatsApp.\n\n" +
+                        "4. Cuando se entregue, marca el reporte como recuperado.",
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { dialogoAyuda = false }) {
+                    Text("Entendido", color = UF.Verde, fontWeight = FontWeight.Bold)
                 }
             }
         )
     }
 }
 
-
-// ==========================================================
-// ESTADÍSTICA (NÚMERO + ETIQUETA)
-// ==========================================================
-
 @Composable
-private fun EstadisticaPerfil(
-    modifier: Modifier,
-    valor: String,
-    etiqueta: String
-) {
+private fun Estadistica(modifier: Modifier, valor: Int, texto: String) {
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        Text(
-            text = valor,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = VerdeOscuro
-        )
+        NumeroAnimado(valor = valor, color = UF.VerdeOscuro, tamano = 24.sp)
 
-        Text(
-            text = etiqueta,
-            fontSize = 12.sp,
-            color = TextoSecundario,
-            maxLines = 1
-        )
+        Text(text = texto, fontSize = 12.sp, color = UF.TextoSec)
     }
 }
 
-
-// ==========================================================
-// ITEM DEL MENÚ
-// ==========================================================
-
 @Composable
 private fun ItemPerfil(
-    icono: ImageVector,
-    texto: String,
+    icono: Int,
+    titulo: String,
+    detalle: String,
+    colorTitulo: Color = UF.Texto,
+    sinTinte: Boolean = false,
     onClick: () -> Unit
 ) {
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .alPresionar(onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
 
         Box(
             modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(FondoEncontrado),
+                .size(42.dp)
+                .background(
+                    if (colorTitulo == UF.Rojo) UF.RojoSuave else UF.Menta,
+                    RoundedCornerShape(14.dp)
+                ),
             contentAlignment = Alignment.Center
         ) {
 
-            Icon(
-                imageVector = icono,
-                contentDescription = texto,
-                tint = VerdeOscuro,
-                modifier = Modifier.size(22.dp)
+            Image(
+                painter = painterResource(id = icono),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                colorFilter = if (sinTinte) null else ColorFilter.tint(
+                    if (colorTitulo == UF.Rojo) UF.Rojo else UF.VerdeOscuro
+                )
             )
         }
 
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(Modifier.width(14.dp))
 
-        Text(
-            text = texto,
-            modifier = Modifier.weight(1f),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = TextoPrincipal
-        )
+        Column(modifier = Modifier.weight(1f)) {
 
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = TextoSecundario,
-            modifier = Modifier.size(24.dp)
-        )
+            Text(
+                text = titulo,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colorTitulo
+            )
+
+            Text(text = detalle, fontSize = 13.sp, color = UF.TextoSec)
+        }
+
+        Text(text = "›", fontSize = 22.sp, color = UF.TextoSec)
     }
 }
 
-
-// ==========================================================
-// DIVISOR ENTRE ITEMS
-// ==========================================================
-
 @Composable
-private fun DivisorPerfil() {
-
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 70.dp, end = 16.dp),
-        thickness = 1.dp,
-        color = FondoGris
+private fun Divisor() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 72.dp)
+            .height(1.dp)
+            .background(UF.Gris)
     )
 }

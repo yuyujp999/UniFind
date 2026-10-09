@@ -1,6 +1,14 @@
 package com.unifind.app
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,7 +65,10 @@ fun PantallaPrincipal(
     onCerrarSesion: () -> Unit = {}
 ) {
 
-    var seccion by remember { mutableStateOf("Inicio") }
+    var seccion by rememberSaveable { mutableStateOf("Inicio") }
+
+    // Id del reporte abierto (pantalla de detalle). null = ninguno.
+    var detalleId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val navegar: (String) -> Unit = { destino ->
         if (destino == "Inicio" ||
@@ -66,34 +77,95 @@ fun PantallaPrincipal(
             destino == "Mis reportes" ||
             destino == "Perfil"
         ) {
+            detalleId = null
             seccion = destino
         }
     }
 
-    // Botón "atrás" del teléfono: regresa a Inicio
-    BackHandler(enabled = seccion != "Inicio") {
+    val abrirReporte: (String) -> Unit = { id -> detalleId = id }
+
+    // Botón "atrás" del teléfono:
+    // 1) cierra el detalle  2) regresa a Inicio
+    BackHandler(enabled = detalleId != null) {
+        detalleId = null
+    }
+
+    BackHandler(enabled = detalleId == null && seccion != "Inicio") {
         seccion = "Inicio"
     }
 
-    when (seccion) {
-        "Buscar" -> BuscarScreen(onNavegar = navegar)
+    val destinoActual = detalleId?.let { "detalle:$it" } ?: seccion
 
-        "Publicar" -> PublicarScreen(
-            onNavegar = navegar,
-            onTerminar = { seccion = "Inicio" }
-        )
+    AnimatedContent(
+        targetState = destinoActual,
+        transitionSpec = {
 
-        "Mis reportes" -> MisReportesScreen(onNavegar = navegar)
+            val entraDetalle = targetState.startsWith("detalle:")
+            val saleDetalle = initialState.startsWith("detalle:")
 
-        "Perfil" -> PerfilScreen(
-            onNavegar = navegar,
-            onCerrarSesion = {
-                seccion = "Inicio"
-                onCerrarSesion()
+            when {
+
+                entraDetalle ->
+                    (slideInHorizontally(tween(320)) { it } + fadeIn(tween(220)))
+                        .togetherWith(
+                            slideOutHorizontally(tween(320)) { -it / 4 } +
+                                fadeOut(tween(200))
+                        )
+
+                saleDetalle ->
+                    (slideInHorizontally(tween(320)) { -it / 4 } + fadeIn(tween(220)))
+                        .togetherWith(
+                            slideOutHorizontally(tween(320)) { it } +
+                                fadeOut(tween(200))
+                        )
+
+                else ->
+                    fadeIn(tween(220)).togetherWith(fadeOut(tween(160)))
             }
-        )
+        },
+        label = "navegacion"
+    ) { destino ->
 
-        else -> HomeScreen(onNavegar = navegar)
+        if (destino.startsWith("detalle:")) {
+
+            DetalleScreen(
+                reporteId = destino.removePrefix("detalle:"),
+                onBack = { detalleId = null }
+            )
+
+        } else {
+
+            when (destino) {
+
+                "Buscar" -> BuscarScreen(
+                    onNavegar = navegar,
+                    onAbrirReporte = abrirReporte
+                )
+
+                "Publicar" -> PublicarScreen(
+                    onNavegar = navegar,
+                    onTerminar = { seccion = "Mis reportes" }
+                )
+
+                "Mis reportes" -> MisReportesScreen(
+                    onNavegar = navegar,
+                    onAbrirReporte = abrirReporte
+                )
+
+                "Perfil" -> PerfilScreen(
+                    onNavegar = navegar,
+                    onCerrarSesion = {
+                        seccion = "Inicio"
+                        onCerrarSesion()
+                    }
+                )
+
+                else -> HomeScreen(
+                    onNavegar = navegar,
+                    onAbrirReporte = abrirReporte
+                )
+            }
+        }
     }
 }
 
