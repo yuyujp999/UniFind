@@ -3,11 +3,16 @@ package com.unifind.app
 import android.util.Patterns
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,14 +30,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-
-// CORREGIDO: verticalScroll y rememberScrollState viven en androidx.compose.foundation
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -61,6 +64,8 @@ import androidx.compose.runtime.setValue
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -77,124 +82,135 @@ import com.google.firebase.auth.FirebaseAuth
 
 import kotlinx.coroutines.delay
 
-
 @Composable
 fun LoginScreen(
     onBack: () -> Unit,
     onRegister: () -> Unit,
     onLogin: () -> Unit
 ) {
-
-    // =========================================================
+    // =====================================================
     // COLORES UNIFIND
-    // =========================================================
+    // =====================================================
 
-    val verdeUniFind = Color(0xFF006B50)
-    val verdeOscuro = Color(0xFF00543F)
-
-    val verdeClaro = Color(0xFFE5F5EE)
+    val verde = Color(0xFF006B50)
+    val verdeOscuro = Color(0xFF004D3A)
+    val verdeMedio = Color(0xFF168568)
+    val verdeClaro = Color(0xFFE8F7F0)
     val verdeSuave = Color(0xFFF1FAF6)
-    val verdeNotificacion = Color(0xFF2E8B68)
 
-    val textoNegro = Color(0xFF222222)
-    val grisTexto = Color(0xFF687277)
-    val grisPlaceholder = Color(0xFF9AA1A4)
-    val grisBorde = Color(0xFFD8DDDF)
+    val texto = Color(0xFF26332F)
+    val gris = Color(0xFF77827F)
+    val borde = Color(0xFFDDE5E1)
 
-    val rojoError = Color(0xFFB3261E)
-    val fondoError = Color(0xFFFFEDEA)
+    val rojo = Color(0xFFB3261E)
+    val fondoRojo = Color(0xFFFFF0EE)
 
-    val azulInfo = Color(0xFF356AE6)
-    val fondoInfo = Color(0xFFEAF0FF)
+    val azul = Color(0xFF356AE6)
+    val fondoAzul = Color(0xFFEAF0FF)
 
-    val fondoBlanco = Color(0xFFFFFEF9)
+    val fondo = Color(0xFFFFFEF9)
 
-
-    // =========================================================
+    // =====================================================
     // FIREBASE
-    // =========================================================
+    // =====================================================
 
     val auth = remember {
         FirebaseAuth.getInstance()
     }
 
+    // =====================================================
+    // ESTADOS
+    // =====================================================
 
-    // =========================================================
-    // VARIABLES
-    // =========================================================
+    var correo by remember {
+        mutableStateOf("")
+    }
 
-    var correo by remember { mutableStateOf("") }
+    var password by remember {
+        mutableStateOf("")
+    }
 
-    var password by remember { mutableStateOf("") }
+    var mostrarPassword by remember {
+        mutableStateOf(false)
+    }
 
-    var mostrarPassword by remember { mutableStateOf(false) }
+    var procesando by remember {
+        mutableStateOf(false)
+    }
 
-    var procesando by remember { mutableStateOf(false) }
+    var mensaje by remember {
+        mutableStateOf("")
+    }
 
-    var mensaje by remember { mutableStateOf("") }
+    var tipoNotificacion by remember {
+        mutableStateOf("error")
+    }
 
-    var tipoNotificacion by remember { mutableStateOf("error") }
+    var mostrarNotificacion by remember {
+        mutableStateOf(false)
+    }
 
-    var mostrarNotificacion by remember { mutableStateOf(false) }
+    var notificacionId by remember {
+        mutableStateOf(0)
+    }
 
-    // Contador para que la notificación se reinicie aunque el mensaje sea el mismo
-    var notificacionId by remember { mutableStateOf(0) }
+    var loginExitoso by remember {
+        mutableStateOf(false)
+    }
 
-    var loginExitoso by remember { mutableStateOf(false) }
+    var mostrarPanel by remember {
+        mutableStateOf(false)
+    }
 
+    // =====================================================
+    // ANIMACIÓN INICIAL
+    // =====================================================
 
-    // =========================================================
-    // OCULTAR NOTIFICACIÓN AUTOMÁTICAMENTE
-    // =========================================================
+    LaunchedEffect(Unit) {
+        mostrarPanel = true
+    }
+
+    // =====================================================
+    // NOTIFICACIONES AUTOMÁTICAS
+    // =====================================================
 
     LaunchedEffect(notificacionId) {
-
-        if (mostrarNotificacion && mensaje.isNotEmpty()) {
-
-            delay(2800)
-
+        if (mostrarNotificacion && mensaje.isNotBlank()) {
+            delay(3200)
             mostrarNotificacion = false
         }
     }
 
-
-    // =========================================================
-    // IR AL INICIO DESPUÉS DEL LOGIN
-    // =========================================================
+    // =====================================================
+    // NAVEGACIÓN DESPUÉS DEL LOGIN
+    // =====================================================
 
     LaunchedEffect(loginExitoso) {
-
         if (loginExitoso) {
-
-            delay(1800)
-
+            delay(1400)
             onLogin()
         }
     }
 
-
-    // =========================================================
-    // FUNCIÓN PARA MOSTRAR NOTIFICACIÓN
-    // =========================================================
+    // =====================================================
+    // FUNCIÓN PARA MOSTRAR ALERTAS
+    // =====================================================
 
     fun mostrarMensaje(
-        texto: String,
+        textoMensaje: String,
         tipo: String
     ) {
-
-        mensaje = texto
+        mensaje = textoMensaje
         tipoNotificacion = tipo
         mostrarNotificacion = true
         notificacionId++
     }
 
-
-    // =========================================================
-    // FUNCIÓN: RECUPERAR CONTRASEÑA
-    // =========================================================
+    // =====================================================
+    // RECUPERAR CONTRASEÑA
+    // =====================================================
 
     fun recuperarPassword() {
-
         if (procesando) {
             return
         }
@@ -202,61 +218,73 @@ fun LoginScreen(
         val correoLimpio = correo.trim().lowercase()
 
         if (correoLimpio.isBlank()) {
-            mostrarMensaje("Ingresa tu correo institucional.", "error")
+            mostrarMensaje(
+                "Escribe tu correo para recuperar tu contraseña.",
+                "error"
+            )
             return
         }
 
-        if (!Patterns.EMAIL_ADDRESS.matcher(correoLimpio).matches()) {
-            mostrarMensaje("Ingresa un correo válido.", "error")
+        if (
+            !Patterns.EMAIL_ADDRESS
+                .matcher(correoLimpio)
+                .matches()
+        ) {
+            mostrarMensaje(
+                "Ingresa un correo electrónico válido.",
+                "error"
+            )
             return
         }
 
-        val correoInstitucional =
-            Regex("^[A-Za-z0-9._%+-]+@virtual\\.utsc\\.edu\\.mx$")
+        val correoInstitucional = Regex(
+            "^[A-Za-z0-9._%+-]+@virtual\\.utsc\\.edu\\.mx$"
+        )
 
         if (!correoInstitucional.matches(correoLimpio)) {
-            mostrarMensaje("Usa tu correo institucional UTSC.", "error")
+            mostrarMensaje(
+                "Utiliza tu correo institucional UTSC.",
+                "error"
+            )
             return
         }
 
         procesando = true
 
-        auth
-            .sendPasswordResetEmail(correoLimpio)
+        auth.sendPasswordResetEmail(correoLimpio)
             .addOnCompleteListener { task ->
 
                 procesando = false
 
                 if (task.isSuccessful) {
-
                     mostrarMensaje(
-                        "Revisa tu correo (también spam) para restablecer tu contraseña.",
+                        "Si la cuenta está registrada, revisa tu correo y la carpeta de spam.",
                         "info"
                     )
-
                 } else {
-
-                    val detalle = task.exception?.message ?: ""
+                    val codigo = (
+                            task.exception?.message ?: ""
+                            ).lowercase()
 
                     when {
-
-                        detalle.contains("network", ignoreCase = true) -> {
-                            mostrarMensaje("Revisa tu conexión a internet.", "error")
+                        codigo.contains("network") -> {
+                            mostrarMensaje(
+                                "No hay conexión. Comprueba tu internet.",
+                                "error"
+                            )
                         }
 
-                        detalle.contains("too-many-requests", ignoreCase = true) ||
-                                detalle.contains("blocked", ignoreCase = true) -> {
-                            mostrarMensaje("Demasiados intentos. Intenta más tarde.", "error")
-                        }
-
-                        detalle.contains("no user record", ignoreCase = true) ||
-                                detalle.contains("user-not-found", ignoreCase = true) -> {
-                            mostrarMensaje("Ese correo no está registrado.", "error")
+                        codigo.contains("too-many-requests") ||
+                                codigo.contains("blocked") -> {
+                            mostrarMensaje(
+                                "Demasiados intentos. Espera un momento.",
+                                "error"
+                            )
                         }
 
                         else -> {
                             mostrarMensaje(
-                                "No se pudo enviar el correo. Intenta de nuevo.",
+                                "No se pudo procesar la solicitud. Inténtalo más tarde.",
                                 "error"
                             )
                         }
@@ -265,1207 +293,777 @@ fun LoginScreen(
             }
     }
 
-
-    // =========================================================
+    // =====================================================
     // PANTALLA PRINCIPAL
-    // =========================================================
+    // =====================================================
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(fondoBlanco)
+            .background(fondo)
     ) {
-
-
-        // =====================================================
-        // FONDO
-        // =====================================================
+        // =================================================
+        // FONDO ILUSTRADO
+        // =================================================
 
         Image(
             painter = painterResource(
                 id = R.drawable.banner_login
             ),
-            contentDescription = "Fondo de inicio de sesión",
+            contentDescription = "Fondo de inicio de sesión UniFind",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
 
-
-        // =====================================================
-        // CAPA SUAVE
-        // =====================================================
-
+        // Capa ligera para suavizar el fondo.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    Color.White.copy(
-                        alpha = 0.10f
-                    )
+                    Color.White.copy(alpha = 0.035f)
                 )
         )
 
+        // =================================================
+        // PANEL ANIMADO DESDE ABAJO
+        // =================================================
 
-        // =====================================================
-        // CONTENIDO
-        // =====================================================
-
-        Column(
+        AnimatedVisibility(
+            visible = mostrarPanel,
             modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .verticalScroll(
-                    rememberScrollState()
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.84f),
+            enter = slideInVertically(
+                initialOffsetY = { altura -> altura },
+                animationSpec = tween(
+                    durationMillis = 600,
+                    easing = FastOutSlowInEasing
                 )
-                .imePadding()
-                .padding(
-                    start = 20.dp,
-                    end = 20.dp,
-                    bottom = 30.dp
-                ),
-
-            horizontalAlignment = Alignment.CenterHorizontally
+            ) + fadeIn(
+                animationSpec = tween(
+                    durationMillis = 350
+                )
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { altura -> altura },
+                animationSpec = tween(
+                    durationMillis = 350
+                )
+            ) + fadeOut(
+                animationSpec = tween(200)
+            )
         ) {
-
-
-            // =================================================
-            // ESPACIO SUPERIOR
-            // =================================================
-
-            Spacer(
-                modifier = Modifier.height(18.dp)
-            )
-
-
-            // =================================================
-            // BOTÓN REGRESAR
-            // =================================================
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
-            ) {
-
-                IconButton(
-                    onClick = {
-                        if (!procesando) {
-                            onBack()
-                        }
-                    },
-
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            Color.White.copy(
-                                alpha = 0.88f
-                            ),
-                            RoundedCornerShape(14.dp)
-                        )
-                ) {
-
-                    Icon(
-                        imageVector =
-                            Icons.AutoMirrored.Filled.ArrowBack,
-
-                        contentDescription = "Regresar",
-
-                        tint = Color(0xFF39454A),
-
-                        modifier = Modifier.size(25.dp)
-                    )
-                }
-            }
-
-
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
-
-
-            // =================================================
-            // CARD LOGIN
-            // =================================================
-
             Card(
                 modifier = Modifier
-                    .fillMaxWidth(),
-
+                    .fillMaxSize()
+                    .shadow(
+                        elevation = 22.dp,
+                        shape = RoundedCornerShape(
+                            topStart = 44.dp,
+                            topEnd = 44.dp,
+                            bottomStart = 0.dp,
+                            bottomEnd = 0.dp
+                        ),
+                        clip = false
+                    ),
                 shape = RoundedCornerShape(
-                    28.dp
+                    topStart = 44.dp,
+                    topEnd = 44.dp,
+                    bottomStart = 0.dp,
+                    bottomEnd = 0.dp
                 ),
-
                 colors = CardDefaults.cardColors(
-                    containerColor =
-                        Color.White.copy(
-                            alpha = 0.96f
-                        )
+                    containerColor = Color.White
                 ),
-
                 elevation = CardDefaults.cardElevation(
-                    defaultElevation = 10.dp
+                    defaultElevation = 0.dp
                 )
             ) {
-
-
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 22.dp,
-                            vertical = 28.dp
-                        ),
-
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally
+                        .fillMaxSize()
+                        .verticalScroll(
+                            rememberScrollState()
+                        )
+                        .imePadding()
                 ) {
+                    // =====================================
+                    // CABECERA VERDE
+                    // =====================================
 
-
-                    // =========================================
-                    // TÍTULO
-                    // =========================================
-
-                    Text(
-                        text = "¡Bienvenido a\nUniFind!",
-
-                        fontSize = 29.sp,
-
-                        lineHeight = 33.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        color =
-                            verdeUniFind,
-
-                        textAlign =
-                            TextAlign.Center
-                    )
-
-
-                    Spacer(
-                        modifier = Modifier.height(7.dp)
-                    )
-
-
-                    // =========================================
-                    // SUBTÍTULO
-                    // =========================================
-
-                    Text(
-                        text =
-                            "Inicia sesión para continuar",
-
-                        fontSize = 15.sp,
-
-                        color =
-                            grisTexto,
-
-                        textAlign =
-                            TextAlign.Center
-                    )
-
-
-                    Spacer(
-                        modifier = Modifier.height(28.dp)
-                    )
-
-
-                    // =========================================
-                    // CORREO
-                    // =========================================
-
-                    Text(
-                        text =
-                            "Correo institucional",
-
-                        modifier =
-                            Modifier.fillMaxWidth(),
-
-                        fontSize = 14.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        color =
-                            verdeOscuro
-                    )
-
-
-                    Spacer(
-                        modifier = Modifier.height(7.dp)
-                    )
-
-
-                    OutlinedTextField(
-
-                        value = correo,
-
-                        onValueChange = {
-
-                            correo = it
-
-                            mensaje = ""
-
-                            mostrarNotificacion = false
-                        },
-
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(58.dp),
-
-                        singleLine = true,
-
-                        leadingIcon = {
-
-                            Image(
-
-                                painter =
-                                    painterResource(
-                                        id =
-                                            R.drawable.envelope_solid
-                                    ),
-
-                                contentDescription =
-                                    "Correo institucional",
-
-                                modifier =
-                                    Modifier.size(20.dp)
-                            )
-                        },
-
-                        textStyle = TextStyle(
-                            color =
-                                textoNegro,
-
-                            fontSize =
-                                15.sp
-                        ),
-
-                        placeholder = {
-
-                            Text(
-
-                                text =
-                                    "Correo institucional",
-
-                                fontSize =
-                                    15.sp,
-
-                                color =
-                                    grisPlaceholder
-                            )
-                        },
-
-                        shape =
-                            RoundedCornerShape(
-                                15.dp
-                            ),
-
-                        colors =
-                            OutlinedTextFieldDefaults.colors(
-
-                                focusedTextColor =
-                                    textoNegro,
-
-                                unfocusedTextColor =
-                                    textoNegro,
-
-                                focusedBorderColor =
-                                    verdeUniFind,
-
-                                unfocusedBorderColor =
-                                    grisBorde,
-
-                                cursorColor =
-                                    verdeUniFind,
-
-                                focusedContainerColor =
-                                    verdeSuave,
-
-                                unfocusedContainerColor =
-                                    Color.White
-                            ),
-
-                        keyboardOptions =
-                            KeyboardOptions(
-                                keyboardType =
-                                    KeyboardType.Email
-                            )
-                    )
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(17.dp)
-                    )
-
-
-                    // =========================================
-                    // CONTRASEÑA
-                    // =========================================
-
-                    Text(
-                        text =
-                            "Contraseña",
-
-                        modifier =
-                            Modifier.fillMaxWidth(),
-
-                        fontSize =
-                            14.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        color =
-                            verdeOscuro
-                    )
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(7.dp)
-                    )
-
-
-                    OutlinedTextField(
-
-                        value =
-                            password,
-
-                        onValueChange = {
-
-                            password = it
-
-                            mensaje = ""
-
-                            mostrarNotificacion =
-                                false
-                        },
-
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(58.dp),
-
-                        singleLine = true,
-
-                        leadingIcon = {
-
-                            Image(
-
-                                painter =
-                                    painterResource(
-                                        id =
-                                            R.drawable.unlock_solid
-                                    ),
-
-                                contentDescription =
-                                    "Contraseña",
-
-                                modifier =
-                                    Modifier.size(20.dp)
-                            )
-                        },
-
-                        textStyle =
-                            TextStyle(
-
-                                color =
-                                    textoNegro,
-
-                                fontSize =
-                                    15.sp
-                            ),
-
-                        placeholder = {
-
-                            Text(
-
-                                text =
-                                    "Ingresa tu contraseña",
-
-                                fontSize =
-                                    15.sp,
-
-                                color =
-                                    grisPlaceholder
-                            )
-                        },
-
-                        shape =
-                            RoundedCornerShape(
-                                15.dp
-                            ),
-
-                        visualTransformation =
-                            if (mostrarPassword) {
-
-                                VisualTransformation.None
-
-                            } else {
-
-                                PasswordVisualTransformation()
-                            },
-
-
-                        // =====================================
-                        // MOSTRAR CONTRASEÑA
-                        // =====================================
-
-                        trailingIcon = {
-
-                            IconButton(
-
-                                onClick = {
-
-                                    mostrarPassword =
-                                        !mostrarPassword
-                                }
-                            ) {
-
-                                Icon(
-
-                                    imageVector =
-                                        if (mostrarPassword) {
-
-                                            Icons.Default.VisibilityOff
-
-                                        } else {
-
-                                            Icons.Default.Visibility
-                                        },
-
-                                    contentDescription =
-                                        if (mostrarPassword) {
-
-                                            "Ocultar contraseña"
-
-                                        } else {
-
-                                            "Mostrar contraseña"
-                                        },
-
-                                    tint =
-                                        verdeUniFind,
-
-                                    modifier =
-                                        Modifier.size(23.dp)
-                                )
-                            }
-                        },
-
-
-                        colors =
-                            OutlinedTextFieldDefaults.colors(
-
-                                focusedTextColor =
-                                    textoNegro,
-
-                                unfocusedTextColor =
-                                    textoNegro,
-
-                                focusedBorderColor =
-                                    verdeUniFind,
-
-                                unfocusedBorderColor =
-                                    grisBorde,
-
-                                cursorColor =
-                                    verdeUniFind,
-
-                                focusedContainerColor =
-                                    verdeSuave,
-
-                                unfocusedContainerColor =
-                                    Color.White
-                            ),
-
-                        keyboardOptions =
-                            KeyboardOptions(
-                                keyboardType =
-                                    KeyboardType.Password
-                            )
-                    )
-
-
-                    // =========================================
-                    // OLVIDASTE CONTRASEÑA
-                    // =========================================
-
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    top = 4.dp
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        verdeOscuro,
+                                        verde,
+                                        verdeMedio
+                                    )
                                 ),
-
-                        horizontalArrangement =
-                            Arrangement.End
+                                shape = RoundedCornerShape(
+                                    topStart = 44.dp,
+                                    topEnd = 44.dp
+                                )
+                            )
+                            .padding(
+                                horizontal = 24.dp,
+                                vertical = 25.dp
+                            )
                     ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "¡Bienvenido a UniFind!",
+                                fontSize = 25.sp,
+                                lineHeight = 31.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Spacer(
+                                modifier = Modifier.height(7.dp)
+                            )
+
+                            Text(
+                                text = "Encuentra lo que importa",
+                                fontSize = 14.sp,
+                                color = Color.White.copy(
+                                    alpha = 0.90f
+                                ),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // =====================================
+                    // FORMULARIO
+                    // =====================================
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = 22.dp,
+                                vertical = 25.dp
+                            ),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Inicia sesión para continuar",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = texto,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(7.dp)
+                        )
 
                         Text(
+                            text = "Accede a tu comunidad universitaria",
+                            fontSize = 13.sp,
+                            color = gris,
+                            textAlign = TextAlign.Center
+                        )
 
-                            text =
-                                "¿Olvidaste tu contraseña?",
+                        Spacer(
+                            modifier = Modifier.height(26.dp)
+                        )
 
-                            modifier =
-                                Modifier
+                        // =================================
+                        // CORREO
+                        // =================================
+
+                        Text(
+                            text = "Correo institucional",
+                            modifier = Modifier.fillMaxWidth(),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = verdeOscuro
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = correo,
+                            onValueChange = {
+                                correo = it
+                                mensaje = ""
+                                mostrarNotificacion = false
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp),
+                            singleLine = true,
+                            leadingIcon = {
+                                Image(
+                                    painter = painterResource(
+                                        id = R.drawable.envelope_solid
+                                    ),
+                                    contentDescription = "Correo institucional",
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    text = "Correo institucional",
+                                    fontSize = 14.sp,
+                                    color = gris
+                                )
+                            },
+                            textStyle = TextStyle(
+                                color = texto,
+                                fontSize = 15.sp
+                            ),
+                            shape = RoundedCornerShape(17.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = texto,
+                                unfocusedTextColor = texto,
+                                focusedBorderColor = verde,
+                                unfocusedBorderColor = borde,
+                                cursorColor = verde,
+                                focusedContainerColor = verdeSuave,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email
+                            )
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(19.dp)
+                        )
+
+                        // =================================
+                        // CONTRASEÑA
+                        // =================================
+
+                        Text(
+                            text = "Contraseña",
+                            modifier = Modifier.fillMaxWidth(),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = verdeOscuro
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = {
+                                password = it
+                                mensaje = ""
+                                mostrarNotificacion = false
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp),
+                            singleLine = true,
+                            leadingIcon = {
+                                Image(
+                                    painter = painterResource(
+                                        id = R.drawable.unlock_solid
+                                    ),
+                                    contentDescription = "Contraseña",
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    text = "Ingresa tu contraseña",
+                                    fontSize = 14.sp,
+                                    color = gris
+                                )
+                            },
+                            textStyle = TextStyle(
+                                color = texto,
+                                fontSize = 15.sp
+                            ),
+                            visualTransformation =
+                                if (mostrarPassword) {
+                                    VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        mostrarPassword =
+                                            !mostrarPassword
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector =
+                                            if (mostrarPassword) {
+                                                Icons.Default.VisibilityOff
+                                            } else {
+                                                Icons.Default.Visibility
+                                            },
+                                        contentDescription =
+                                            if (mostrarPassword) {
+                                                "Ocultar contraseña"
+                                            } else {
+                                                "Mostrar contraseña"
+                                            },
+                                        tint = verde
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(17.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = texto,
+                                unfocusedTextColor = texto,
+                                focusedBorderColor = verde,
+                                unfocusedBorderColor = borde,
+                                cursorColor = verde,
+                                focusedContainerColor = verdeSuave,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password
+                            )
+                        )
+
+                        // =================================
+                        // RECUPERAR CONTRASEÑA
+                        // =================================
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Text(
+                                text = "¿Olvidaste tu contraseña?",
+                                modifier = Modifier
                                     .clickable {
                                         recuperarPassword()
                                     }
                                     .padding(
-                                        vertical = 8.dp,
-                                        horizontal = 4.dp
+                                        horizontal = 4.dp,
+                                        vertical = 9.dp
                                     ),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = verde
+                            )
+                        }
 
-                            fontSize =
-                                13.sp,
-
-                            fontWeight =
-                                FontWeight.Bold,
-
-                            color =
-                                verdeUniFind
+                        Spacer(
+                            modifier = Modifier.height(20.dp)
                         )
-                    }
 
+                        // =================================
+                        // BOTÓN INICIAR SESIÓN
+                        // =================================
 
-                    Spacer(
-                        modifier =
-                            Modifier.height(24.dp)
-                    )
+                        Button(
+                            onClick = {
+                                if (procesando) {
+                                    return@Button
+                                }
 
-
-                    // =========================================
-                    // BOTÓN INICIAR SESIÓN
-                    // =========================================
-
-                    Button(
-
-                        onClick = {
-
-                            if (procesando) {
-                                return@Button
-                            }
-
-
-                            // =====================================
-                            // NORMALIZAR CORREO
-                            // =====================================
-
-                            val correoLimpio =
-                                correo
+                                val correoLimpio = correo
                                     .trim()
                                     .lowercase()
 
-
-                            // =====================================
-                            // VALIDAR CORREO VACÍO
-                            // =====================================
-
-                            if (
-                                correoLimpio.isBlank()
-                            ) {
-
-                                mostrarMensaje(
-                                    "Ingresa tu correo institucional.",
-                                    "error"
-                                )
-
-                                return@Button
-                            }
-
-
-                            // =====================================
-                            // VALIDAR FORMATO
-                            // =====================================
-
-                            if (
-                                !Patterns
-                                    .EMAIL_ADDRESS
-                                    .matcher(
-                                        correoLimpio
+                                if (correoLimpio.isBlank()) {
+                                    mostrarMensaje(
+                                        "Ingresa tu correo institucional.",
+                                        "error"
                                     )
-                                    .matches()
-                            ) {
+                                    return@Button
+                                }
 
-                                mostrarMensaje(
-                                    "Correo no válido.",
-                                    "error"
-                                )
+                                if (
+                                    !Patterns.EMAIL_ADDRESS
+                                        .matcher(correoLimpio)
+                                        .matches()
+                                ) {
+                                    mostrarMensaje(
+                                        "Ingresa un correo válido.",
+                                        "error"
+                                    )
+                                    return@Button
+                                }
 
-                                return@Button
-                            }
-
-
-                            // =====================================
-                            // VALIDAR UTSC
-                            // =====================================
-
-                            val correoInstitucional =
-                                Regex(
+                                val correoInstitucional = Regex(
                                     "^[A-Za-z0-9._%+-]+@virtual\\.utsc\\.edu\\.mx$"
                                 )
 
-
-                            if (
-                                !correoInstitucional
-                                    .matches(
+                                if (
+                                    !correoInstitucional.matches(
                                         correoLimpio
                                     )
-                            ) {
+                                ) {
+                                    mostrarMensaje(
+                                        "Utiliza tu correo institucional UTSC.",
+                                        "error"
+                                    )
+                                    return@Button
+                                }
 
-                                mostrarMensaje(
-                                    "Usa tu correo institucional UTSC.",
-                                    "error"
-                                )
+                                if (password.isBlank()) {
+                                    mostrarMensaje(
+                                        "Ingresa tu contraseña.",
+                                        "error"
+                                    )
+                                    return@Button
+                                }
 
-                                return@Button
-                            }
+                                procesando = true
+                                mensaje = ""
+                                mostrarNotificacion = false
+                                loginExitoso = false
 
-
-                            // =====================================
-                            // VALIDAR CONTRASEÑA
-                            // =====================================
-
-                            if (
-                                password.isBlank()
-                            ) {
-
-                                mostrarMensaje(
-                                    "Ingresa tu contraseña.",
-                                    "error"
-                                )
-
-                                return@Button
-                            }
-
-
-                            // =====================================
-                            // INICIAR SESIÓN
-                            // =====================================
-
-                            procesando = true
-
-                            mensaje = ""
-
-                            mostrarNotificacion = false
-
-                            loginExitoso = false
-
-
-                            auth
-                                .signInWithEmailAndPassword(
+                                auth.signInWithEmailAndPassword(
                                     correoLimpio,
                                     password
-                                )
-                                .addOnCompleteListener { task ->
-
+                                ).addOnCompleteListener { task ->
                                     procesando = false
 
-
                                     if (task.isSuccessful) {
-
-                                        // =================================
-                                        // LIMPIAR CAMPOS
-                                        // =================================
-
                                         correo = ""
-
                                         password = ""
-
                                         mostrarPassword = false
 
-
-                                        // =================================
-                                        // NOTIFICACIÓN EXITOSA
-                                        // =================================
-
                                         mostrarMensaje(
-                                            "Inicio de sesión exitoso",
+                                            "¡Bienvenido! Has iniciado sesión correctamente.",
                                             "success"
                                         )
 
-                                        loginExitoso =
-                                            true
-
+                                        loginExitoso = true
                                     } else {
+                                        loginExitoso = false
 
-                                        loginExitoso =
-                                            false
-
-
-                                        val error =
-                                            task.exception
-
-
-                                        val mensajeError =
-                                            error?.message
-                                                ?: ""
-
-
-                                        // =============================
-                                        // ERROR CORREO / CONTRASEÑA
-                                        // =============================
+                                        val error = (
+                                                task.exception?.message ?: ""
+                                                ).lowercase()
 
                                         when {
-
-                                            mensajeError.contains(
-                                                "password is invalid",
-                                                ignoreCase = true
-                                            ) -> {
-
+                                            error.contains("invalid-credential") ||
+                                                    error.contains("invalid credential") ||
+                                                    error.contains("wrong-password") ||
+                                                    error.contains("user-not-found") ||
+                                                    error.contains("password is invalid") -> {
                                                 mostrarMensaje(
                                                     "Correo o contraseña incorrectos.",
                                                     "error"
                                                 )
                                             }
 
-
-                                            mensajeError.contains(
-                                                "invalid-credential",
-                                                ignoreCase = true
-                                            ) -> {
-
+                                            error.contains("network") -> {
                                                 mostrarMensaje(
-                                                    "Correo o contraseña incorrectos.",
+                                                    "Comprueba tu conexión a internet.",
                                                     "error"
                                                 )
                                             }
 
-
-                                            mensajeError.contains(
-                                                "user-not-found",
-                                                ignoreCase = true
-                                            ) -> {
-
+                                            error.contains("too-many-requests") -> {
                                                 mostrarMensaje(
-                                                    "Correo o contraseña incorrectos.",
+                                                    "Demasiados intentos. Espera antes de volver a intentarlo.",
                                                     "error"
                                                 )
                                             }
 
-
-                                            mensajeError.contains(
-                                                "wrong-password",
-                                                ignoreCase = true
-                                            ) -> {
-
+                                            error.contains("user-disabled") -> {
                                                 mostrarMensaje(
-                                                    "Correo o contraseña incorrectos.",
+                                                    "Esta cuenta está deshabilitada.",
                                                     "error"
                                                 )
                                             }
-
-
-                                            mensajeError.contains(
-                                                "network",
-                                                ignoreCase = true
-                                            ) -> {
-
-                                                mostrarMensaje(
-                                                    "Revisa tu conexión a internet.",
-                                                    "error"
-                                                )
-                                            }
-
-
-                                            mensajeError.contains(
-                                                "too-many-requests",
-                                                ignoreCase = true
-                                            ) -> {
-
-                                                mostrarMensaje(
-                                                    "Demasiados intentos. Intenta más tarde.",
-                                                    "error"
-                                                )
-                                            }
-
 
                                             else -> {
-
                                                 mostrarMensaje(
-                                                    "No se pudo iniciar sesión.",
+                                                    "No se pudo iniciar sesión. Inténtalo nuevamente.",
                                                     "error"
                                                 )
                                             }
                                         }
                                     }
                                 }
-                        },
-
-
-                        enabled =
-                            !procesando,
-
-                        modifier =
-                            Modifier
+                            },
+                            enabled = !procesando,
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .height(56.dp),
-
-                        shape =
-                            RoundedCornerShape(
-                                16.dp
+                                .height(58.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = verde,
+                                disabledContainerColor = verde.copy(
+                                    alpha = 0.55f
+                                )
                             ),
-
-                        colors =
-                            ButtonDefaults.buttonColors(
-
-                                containerColor =
-                                    verdeUniFind,
-
-                                disabledContainerColor =
-                                    verdeUniFind.copy(
-                                        alpha = 0.60f
-                                    )
+                            elevation = ButtonDefaults.buttonElevation(
+                                defaultElevation = 4.dp,
+                                pressedElevation = 1.dp
                             )
-                    ) {
+                        ) {
+                            if (procesando) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.5.dp
+                                )
 
-                        if (procesando) {
+                                Spacer(
+                                    modifier = Modifier.width(10.dp)
+                                )
 
-                            CircularProgressIndicator(
-
-                                modifier =
-                                    Modifier.size(
-                                        23.dp
-                                    ),
-
-                                color =
-                                    Color.White,
-
-                                strokeWidth =
-                                    2.5.dp
-                            )
-
-
-                            Spacer(
-                                modifier =
-                                    Modifier.width(
-                                        10.dp
-                                    )
-                            )
-
-
-                            Text(
-
-                                text =
-                                    "Procesando...",
-
-                                fontSize =
-                                    16.sp,
-
-                                fontWeight =
-                                    FontWeight.Bold,
-
-                                color =
-                                    Color.White
-                            )
-
-                        } else {
-
-                            Text(
-
-                                text =
-                                    "Iniciar sesión",
-
-                                fontSize =
-                                    17.sp,
-
-                                fontWeight =
-                                    FontWeight.Bold,
-
-                                color =
-                                    Color.White
-                            )
+                                Text(
+                                    text = "Verificando...",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Text(
+                                    text = "Iniciar sesión",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
-                    }
 
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(22.dp)
-                    )
-
-
-                    // =========================================
-                    // REGISTRO
-                    // =========================================
-
-                    Row(
-
-                        horizontalArrangement =
-                            Arrangement.Center,
-
-                        verticalAlignment =
-                            Alignment.CenterVertically
-                    ) {
-
-                        Text(
-
-                            text =
-                                "¿No tienes cuenta? ",
-
-                            fontSize =
-                                13.sp,
-
-                            color =
-                                grisTexto
+                        Spacer(
+                            modifier = Modifier.height(23.dp)
                         )
 
+                        // =================================
+                        // REGISTRO
+                        // =================================
 
-                        Text(
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "¿No tienes cuenta? ",
+                                fontSize = 13.sp,
+                                color = gris
+                            )
 
-                            text =
-                                "Regístrate",
-
-                            modifier =
-                                Modifier.clickable {
-
+                            Text(
+                                text = "Regístrate",
+                                modifier = Modifier.clickable {
                                     if (!procesando) {
                                         onRegister()
                                     }
                                 },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = verde
+                            )
+                        }
 
-                            fontSize =
-                                13.sp,
+                        Spacer(
+                            modifier = Modifier.height(14.dp)
+                        )
 
-                            fontWeight =
-                                FontWeight.Bold,
+                        // =================================
+                        // TEXTO INSTITUCIONAL
+                        // =================================
 
-                            color =
-                                verdeUniFind
+                        Text(
+                            text = "Acceso exclusivo para estudiantes UTSC",
+                            fontSize = 12.sp,
+                            color = gris,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(24.dp)
                         )
                     }
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(4.dp)
-                    )
-
-
-                    // =========================================
-                    // TEXTO INSTITUCIONAL
-                    // =========================================
-
-                    Text(
-
-                        text =
-                            "Acceso exclusivo para estudiantes UTSC",
-
-                        fontSize =
-                            11.sp,
-
-                        color =
-                            grisTexto.copy(
-                                alpha = 0.75f
-                            ),
-
-                        textAlign =
-                            TextAlign.Center
-                    )
                 }
             }
-
-
-            Spacer(
-                modifier =
-                    Modifier.height(25.dp)
-            )
         }
 
+        // =================================================
+        // BOTÓN REGRESAR
+        // =================================================
 
-        // =====================================================
-        // NOTIFICACIÓN SUPERIOR DERECHA
-        // =====================================================
+        Box(
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(
+                    start = 20.dp,
+                    top = 14.dp
+                )
+                .size(48.dp)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .background(
+                    Color.White.copy(alpha = 0.97f),
+                    RoundedCornerShape(16.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            IconButton(
+                onClick = {
+                    if (!procesando) {
+                        onBack()
+                    }
+                },
+                enabled = !procesando
+            ) {
+                Icon(
+                    imageVector =
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Regresar",
+                    tint = verdeOscuro,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        // =================================================
+        // NOTIFICACIÓN ANIMADA
+        // =================================================
 
         AnimatedVisibility(
-
-            visible =
-                mostrarNotificacion,
-
-            modifier =
-                Modifier
-                    .align(
-                        Alignment.TopEnd
-                    )
-                    .statusBarsPadding()
-                    .padding(
-                        top = 10.dp,
-                        end = 12.dp
-                    ),
-
-            enter =
-                slideInHorizontally(
-                    initialOffsetX = {
-                        it
-                    }
-                ) + fadeIn(),
-
-            exit =
-                slideOutHorizontally(
-                    targetOffsetX = {
-                        it
-                    }
-                ) + fadeOut()
+            visible = mostrarNotificacion,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(
+                    top = 72.dp,
+                    start = 18.dp,
+                    end = 18.dp
+                ),
+            enter = fadeIn(
+                animationSpec = tween(220)
+            ) + slideInHorizontally(
+                initialOffsetX = { it / 3 },
+                animationSpec = tween(
+                    durationMillis = 300,
+                    easing = FastOutSlowInEasing
+                )
+            ),
+            exit = fadeOut(
+                animationSpec = tween(180)
+            ) + slideOutHorizontally(
+                targetOffsetX = { it / 3 },
+                animationSpec = tween(180)
+            )
         ) {
-
-
             Card(
-
-                modifier =
-                    Modifier.width(
-                        245.dp
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(20.dp)
                     ),
-
-                shape =
-                    RoundedCornerShape(
-                        17.dp
-                    ),
-
-                colors =
-                    CardDefaults.cardColors(
-
-                        containerColor =
-                            when (tipoNotificacion) {
-
-                                "success" -> verdeClaro
-
-                                "info" -> fondoInfo
-
-                                else -> fondoError
-                            }
-                    ),
-
-                elevation =
-                    CardDefaults.cardElevation(
-                        defaultElevation =
-                            8.dp
-                    )
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = when (tipoNotificacion) {
+                        "success" -> verdeClaro
+                        "info" -> fondoAzul
+                        else -> fondoRojo
+                    }
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = when (tipoNotificacion) {
+                        "success" -> verde.copy(alpha = 0.18f)
+                        "info" -> azul.copy(alpha = 0.18f)
+                        else -> rojo.copy(alpha = 0.15f)
+                    }
+                ),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = 0.dp
+                )
             ) {
-
-
                 Row(
-
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = 13.dp,
-                                vertical = 12.dp
-                            ),
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 15.dp,
+                            vertical = 14.dp
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-
-
-                    // =========================================
-                    // ICONO
-                    // =========================================
-
                     Box(
-
-                        modifier =
-                            Modifier
-                                .size(38.dp)
-                                .background(
-
-                                    when (tipoNotificacion) {
-
-                                        "success" ->
-                                            verdeNotificacion.copy(alpha = 0.14f)
-
-                                        "info" ->
-                                            azulInfo.copy(alpha = 0.12f)
-
-                                        else ->
-                                            rojoError.copy(alpha = 0.12f)
-                                    },
-
-                                    RoundedCornerShape(
-                                        12.dp
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(
+                                color = when (tipoNotificacion) {
+                                    "success" -> verde.copy(
+                                        alpha = 0.12f
                                     )
-                                ),
-
-                        contentAlignment =
-                            Alignment.Center
+                                    "info" -> azul.copy(
+                                        alpha = 0.12f
+                                    )
+                                    else -> rojo.copy(
+                                        alpha = 0.09f
+                                    )
+                                },
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-
-
                         Icon(
-
-                            imageVector =
-
-                                when (tipoNotificacion) {
-
-                                    "success" -> Icons.Default.CheckCircle
-
-                                    "info" -> Icons.Default.Info
-
-                                    else -> Icons.Default.Error
-                                },
-
-                            contentDescription =
-                                null,
-
-                            tint =
-
-                                when (tipoNotificacion) {
-
-                                    "success" -> verdeNotificacion
-
-                                    "info" -> azulInfo
-
-                                    else -> rojoError
-                                },
-
-                            modifier =
-                                Modifier.size(
-                                    23.dp
-                                )
+                            imageVector = when (tipoNotificacion) {
+                                "success" -> Icons.Default.CheckCircle
+                                "info" -> Icons.Default.Info
+                                else -> Icons.Default.Error
+                            },
+                            contentDescription = null,
+                            tint = when (tipoNotificacion) {
+                                "success" -> verde
+                                "info" -> azul
+                                else -> rojo
+                            },
+                            modifier = Modifier.size(23.dp)
                         )
                     }
 
-
                     Spacer(
-                        modifier =
-                            Modifier.width(
-                                10.dp
-                            )
+                        modifier = Modifier.width(12.dp)
                     )
 
-
-                    // =========================================
-                    // MENSAJE
-                    // =========================================
-
-                    Text(
-
-                        text =
-                            mensaje,
-
-                        fontSize =
-                            13.sp,
-
-                        fontWeight =
-                            FontWeight.SemiBold,
-
-                        color =
-
-                            when (tipoNotificacion) {
-
-                                "success" -> verdeOscuro
-
-                                "info" -> Color(0xFF244A9B)
-
-                                else -> rojoError
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = when (tipoNotificacion) {
+                                "success" -> "¡Todo listo!"
+                                "info" -> "Revisa tu correo"
+                                else -> "Revisa este detalle"
                             },
+                            color = when (tipoNotificacion) {
+                                "success" -> verdeOscuro
+                                "info" -> Color(0xFF244A9B)
+                                else -> rojo
+                            },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
 
-                        maxLines =
-                            3
-                    )
+                        Spacer(
+                            modifier = Modifier.height(3.dp)
+                        )
+
+                        Text(
+                            text = mensaje,
+                            color = texto,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
                 }
             }
         }

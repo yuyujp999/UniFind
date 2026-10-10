@@ -27,6 +27,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,8 +60,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -124,9 +126,9 @@ private val VerdeOscuro = Color(0xFF006B4A)
 private val VerdeClaro = Color(0xFFE2F6EB)
 private val VerdeBanner = Color(0xFF004D3A)
 
-private val Rojo = Color(0xFFE53935)
-private val RojoOscuro = Color(0xFFC62828)
-private val RojoClaro = Color(0xFFFFE9E9)
+private val Rojo = Color(0xFFF28C28)
+private val RojoOscuro = Color(0xFFD96B0B)
+private val RojoClaro = Color(0xFFFFF1E2)
 
 private val FondoPrincipal = Color(0xFFE8F7EF)
 private val FondoCampo = Color(0xFFF6F8F8)
@@ -139,6 +141,8 @@ private val TextoSecundario = Color(0xFF5F6368)
 private val TextoClaro = Color(0xFF8A9094)
 
 private const val LIMITE_DESCRIPCION = 200
+
+private val FondoModal = Color(0x66000000)
 
 // Ponlo en true SOLO para probar con una sola cuenta
 // (permite reclamar tus propios reportes).
@@ -157,17 +161,6 @@ private val categoriasFormulario = listOf(
     "Documentos",
     "Libros",
     "Otros"
-)
-
-private val emojisCategoria = mapOf(
-    "Mochilas" to "🎒",
-    "Electrónicos" to "📱",
-    "Llaves" to "🔑",
-    "Ropa" to "👕",
-    "Accesorios" to "👓",
-    "Documentos" to "📄",
-    "Libros" to "📚",
-    "Otros" to "📦"
 )
 
 private val ubicacionesFormulario = listOf(
@@ -279,67 +272,26 @@ fun PublicarScreen(
         mutableStateOf(false)
     }
 
+    var avisoPublicacion by remember {
+        mutableStateOf<String?>(null)
+    }
+
     val scope = rememberCoroutineScope()
 
-    // ======================================================
-    // APARICIÓN PROGRESIVA DE CAMPOS
-    // nombre -> categoría -> descripción + ubicación -> WhatsApp
-    // Una vez que aparece un bloque ya no se oculta.
-    // ======================================================
-
-    val scrollState = rememberScrollState()
-
-    var entro by remember {
-        mutableStateOf(false)
+    LaunchedEffect(avisoPublicacion) {
+        if (avisoPublicacion != null) {
+            delay(3500)
+            avisoPublicacion = null
+        }
     }
 
-    var verCategoria by remember {
-        mutableStateOf(false)
-    }
-
-    var verDetalles by remember {
-        mutableStateOf(false)
-    }
-
-    var verContacto by remember {
-        mutableStateOf(false)
-    }
-
+    // Todos los campos se muestran desde el inicio; el desplazamiento ocurre únicamente dentro del formulario.
+    val entro = true
     val nombreOk = nombre.isNotBlank()
     val categoriaOk = categoria != null
     val ubicacionOk = ubicacion != null
     val whatsappOk = whatsapp.length == 10
-
-    val completados =
-        listOf(nombreOk, categoriaOk, ubicacionOk, whatsappOk)
-            .count { it }
-
-    LaunchedEffect(Unit) {
-        entro = true
-    }
-
-    LaunchedEffect(nombreOk) {
-        if (nombreOk) verCategoria = true
-    }
-
-    LaunchedEffect(categoriaOk) {
-        if (categoriaOk) verDetalles = true
-    }
-
-    LaunchedEffect(ubicacionOk) {
-        if (ubicacionOk) verContacto = true
-    }
-
-    val reveladas =
-        listOf(verCategoria, verDetalles, verContacto)
-            .count { it }
-
-    LaunchedEffect(reveladas) {
-        if (reveladas > 0) {
-            delay(380)
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
-    }
+    val completados = listOf(nombreOk, categoriaOk, ubicacionOk, whatsappOk).count { it }
 
     // ======================================================
     // COINCIDENCIAS
@@ -541,18 +493,19 @@ fun PublicarScreen(
                                 categoria = null
                                 ubicacion = null
                                 intentoPublicar = false
-                                verCategoria = false
-                                verDetalles = false
-                                verContacto = false
                                 fotos.clear()
 
-                                Toast.makeText(
-                                    contexto,
-                                    "Reporte publicado",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                // Aviso visual dentro de UniFind; no usa notificaciones Android.
+                                avisoPublicacion = if (esPerdido) {
+                                    "Tu reporte de objeto perdido se publicó correctamente."
+                                } else {
+                                    "Tu reporte de objeto encontrado se publicó correctamente."
+                                }
 
-                                onTerminar()
+                                scope.launch {
+                                    delay(2200)
+                                    onTerminar()
+                                }
                             }
                             .addOnFailureListener { e ->
 
@@ -580,8 +533,9 @@ fun PublicarScreen(
             .background(FondoPrincipal)
     ) {
 
-        // Espacio para que el logo "Publicar" del banner se vea completo
-        val espacioLogo = maxHeight * 0.125f
+        // Alturas adaptables al teléfono para que el formulario tenga más espacio.
+        val espacioLogo = maxHeight * 0.13f
+        val alturaTarjetaFormulario = maxHeight * 0.50f
 
         // Fondo: banner
         Image(
@@ -624,68 +578,78 @@ fun PublicarScreen(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .verticalScroll(scrollState)
                         .padding(horizontal = 16.dp)
                 ) {
 
                     Spacer(modifier = Modifier.height(espacioLogo))
 
-                    Aparece(visible = entro, retraso = 60) {
-                        SubtituloBanner(esPerdido = esPerdido)
-                    }
+                    SubtituloBanner(esPerdido = esPerdido)
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Aparece(visible = entro, retraso = 160) {
-                        SelectorTipoPublicacion(
-                            tipo = tipo,
-                            colorIndicador = colorPrincipal,
-                            onCambio = { tipo = it }
-                        )
-                    }
+                    SelectorTipoPublicacion(
+                        tipo = tipo,
+                        colorIndicador = colorPrincipal,
+                        onCambio = { tipo = it }
+                    )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Aparece(visible = entro, retraso = 260) {
-                        ProgresoFormulario(
-                            completados = completados,
-                            total = 4,
-                            color = colorPrincipal
-                        )
-                    }
+                    ProgresoFormulario(
+                        completados = completados,
+                        total = 4,
+                        color = colorPrincipal
+                    )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "* Campos obligatorios",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = VerdeBanner,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Aparece(visible = entro, retraso = 360) {
 
                         Column {
 
-                            FormularioSecciones(
+                            TarjetaFormularioDesdeAbajo(
                                 acento = colorPrincipal,
-                                acentoClaro = colorClaro,
-                                fotos = fotos,
-                                abrirGaleria = abrirGaleria,
-                                quitarFoto = { uri ->
-                                    fotos.remove(uri)
-                                },
-                                nombre = nombre,
-                                onNombre = { nombre = it },
-                                ejemploNombre = ejemploNombre,
-                                categoria = categoria,
-                                onCategoria = { categoria = it },
-                                descripcion = descripcion,
-                                onDescripcion = { descripcion = it },
-                                ubicacion = ubicacion,
-                                onUbicacion = { ubicacion = it },
-                                whatsapp = whatsapp,
-                                onWhatsapp = {
-                                    whatsapp = it.filter { c -> c.isDigit() }.take(10)
-                                },
-                                intentoPublicar = intentoPublicar,
-                                mostrarCategoria = verCategoria || intentoPublicar,
-                                mostrarDetalles = verDetalles || intentoPublicar,
-                                mostrarContacto = verContacto || intentoPublicar
-                            )
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(alturaTarjetaFormulario)
+                            ) {
+                                FormularioSecciones(
+                                    acento = colorPrincipal,
+                                    acentoClaro = colorClaro,
+                                    fotos = fotos,
+                                    abrirGaleria = abrirGaleria,
+                                    quitarFoto = { uri ->
+                                        fotos.remove(uri)
+                                    },
+                                    nombre = nombre,
+                                    onNombre = { nombre = it },
+                                    ejemploNombre = ejemploNombre,
+                                    categoria = categoria,
+                                    onCategoria = { categoria = it },
+                                    descripcion = descripcion,
+                                    onDescripcion = { descripcion = it },
+                                    ubicacion = ubicacion,
+                                    onUbicacion = { ubicacion = it },
+                                    whatsapp = whatsapp,
+                                    onWhatsapp = {
+                                        whatsapp = it.filter { c -> c.isDigit() }.take(10)
+                                    },
+                                    intentoPublicar = intentoPublicar,
+                                    mostrarCategoria = true,
+                                    mostrarDetalles = true,
+                                    mostrarContacto = true
+                                )
+                            }
 
                             // ======================================
                             // SUGERENCIAS: ¿YA LO REPORTARON?
@@ -710,9 +674,11 @@ fun PublicarScreen(
                                                     .background(VerdeClaro),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text(
-                                                    text = "🔎",
-                                                    fontSize = 18.sp
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = null,
+                                                    tint = VerdeOscuro,
+                                                    modifier = Modifier.size(21.dp)
                                                 )
                                             }
 
@@ -767,17 +733,7 @@ fun PublicarScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            Text(
-                                text = "* Campos obligatorios",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = VerdeBanner,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-
-                            Spacer(modifier = Modifier.height(20.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                         }
                     }
                 }
@@ -786,41 +742,42 @@ fun PublicarScreen(
                 // BARRA INFERIOR CON EL BOTÓN PUBLICAR
                 // ==============================================
 
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
-                ) {
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(BordeCampo)
-                    )
-
-                    Box(
-                        modifier = Modifier.padding(
+                        .background(Color.Transparent)
+                        .padding(
                             horizontal = 16.dp,
                             vertical = 10.dp
                         )
-                    ) {
-
-                        BotonPublicarAnimado(
-                            texto = if (esPerdido) {
-                                "Publicar objeto perdido"
-                            } else {
-                                "Publicar objeto encontrado"
-                            },
-                            cargando = publicando,
-                            listo = completados == 4,
-                            colorInicio = colorSecundario,
-                            colorFin = colorPrincipal,
-                            onClick = publicar
-                        )
-                    }
+                ) {
+                    BotonPublicarAnimado(
+                        texto = if (esPerdido) {
+                            "Publicar objeto perdido"
+                        } else {
+                            "Publicar objeto encontrado"
+                        },
+                        cargando = publicando,
+                        listo = completados == 4,
+                        colorInicio = colorSecundario,
+                        colorFin = colorPrincipal,
+                        onClick = publicar
+                    )
                 }
             }
+        }
+
+        avisoPublicacion?.let { mensajeAviso ->
+            AvisoPublicacion(
+                mensaje = mensajeAviso,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(
+                        top = 58.dp,
+                        end = 12.dp,
+                        start = 52.dp
+                    )
+            )
         }
 
         // ======================================================
@@ -831,51 +788,32 @@ fun PublicarScreen(
 
         if (reporteElegido != null) {
 
-            DialogoCoincidencia(
+            ModalCoincidenciaDesdeAbajo(
                 reporte = reporteElegido,
                 usuarioPerdio = esPerdido,
                 enviando = enviando,
-                onCancelar = {
-                    seleccionado = null
-                },
+                onCancelar = { seleccionado = null },
                 onEnviar = { mensaje ->
-
                     enviando = true
-
                     registrarCoincidencia(
                         reporteId = reporteElegido.id,
                         estadoEsperado = estadoOpuesto,
                         usuarioPerdio = esPerdido,
                         mensaje = mensaje,
                         onExito = {
-
                             enviando = false
                             seleccionado = null
-
-                            val saludo =
-                                if (esPerdido) {
-                                    "Hola, vi tu reporte del objeto encontrado \"${reporteElegido.titulo}\" en UniFind y creo que es mío."
-                                } else {
-                                    "Hola, vi tu reporte del objeto perdido \"${reporteElegido.titulo}\" en UniFind y creo que lo encontré."
-                                }
-
-                            abrirWhatsApp(
-                                contexto,
-                                reporteElegido.whatsapp,
-                                "$saludo $mensaje"
-                            )
-
+                            val saludo = if (esPerdido) {
+                                "Hola, vi tu reporte del objeto encontrado \"${reporteElegido.titulo}\" en UniFind y creo que es mío."
+                            } else {
+                                "Hola, vi tu reporte del objeto perdido \"${reporteElegido.titulo}\" en UniFind y creo que lo encontré."
+                            }
+                            abrirWhatsApp(contexto, reporteElegido.whatsapp, "$saludo $mensaje")
                             onTerminar()
                         },
                         onError = { motivo ->
-
                             enviando = false
-
-                            Toast.makeText(
-                                contexto,
-                                motivo,
-                                Toast.LENGTH_LONG
-                            ).show()
+                            Toast.makeText(contexto, motivo, Toast.LENGTH_LONG).show()
                         }
                     )
                 }
@@ -895,19 +833,9 @@ private fun Aparece(
     retraso: Int,
     contenido: @Composable () -> Unit
 ) {
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(
-            tween(480, delayMillis = retraso)
-        ) + slideInVertically(
-            animationSpec = tween(
-                durationMillis = 520,
-                delayMillis = retraso,
-                easing = FastOutSlowInEasing
-            )
-        ) { it / 4 }
-    ) {
+    // Se conserva la firma para no afectar llamadas existentes,
+    // pero el contenido aparece inmediatamente, sin animación de entrada.
+    if (visible) {
         contenido()
     }
 }
@@ -1077,7 +1005,8 @@ private fun SelectorTipoPublicacion(
         ) {
 
             OpcionTipo(
-                texto = "🔎  Perdí algo",
+                texto = "Perdí algo",
+                icono = Icons.Default.Search,
                 seleccionado = tipo == "perdido",
                 modifier = Modifier.weight(1f),
                 onClick = {
@@ -1086,7 +1015,8 @@ private fun SelectorTipoPublicacion(
             )
 
             OpcionTipo(
-                texto = "🎁  Encontré algo",
+                texto = "Encontré algo",
+                icono = Icons.Default.Add,
                 seleccionado = tipo == "encontrado",
                 modifier = Modifier.weight(1f),
                 onClick = {
@@ -1100,6 +1030,7 @@ private fun SelectorTipoPublicacion(
 @Composable
 private fun OpcionTipo(
     texto: String,
+    icono: androidx.compose.ui.graphics.vector.ImageVector,
     seleccionado: Boolean,
     modifier: Modifier,
     onClick: () -> Unit
@@ -1139,12 +1070,24 @@ private fun OpcionTipo(
         contentAlignment = Alignment.Center
     ) {
 
-        Text(
-            text = texto,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = colorTexto
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icono,
+                contentDescription = null,
+                tint = colorTexto,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = texto,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = colorTexto
+            )
+        }
     }
 }
 
@@ -1249,11 +1192,11 @@ private fun BotonPublicarAnimado(
                         .background(Color.White.copy(alpha = 0.20f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "✓",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(19.dp)
                     )
                 }
 
@@ -1271,8 +1214,38 @@ private fun BotonPublicarAnimado(
 }
 
 // ==========================================================
+// CARD PRINCIPAL DEL FORMULARIO
+// Entra desde abajo y mantiene todo el contenido ordenado.
+// ==========================================================
+
+@Composable
+private fun TarjetaFormularioDesdeAbajo(
+    acento: Color,
+    modifier: Modifier = Modifier,
+    contenido: @Composable ColumnScope.() -> Unit
+) {
+    val forma = RoundedCornerShape(26.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(10.dp, forma)
+            .clip(forma)
+            .background(Color.White)
+            .border(1.dp, BordeCampo.copy(alpha = 0.8f), forma)
+            .padding(14.dp)
+    ) {
+        Box(
+            modifier = Modifier.width(42.dp).height(5.dp).clip(CircleShape)
+                .background(acento.copy(alpha = 0.28f)).align(Alignment.CenterHorizontally)
+        )
+        Spacer(Modifier.height(10.dp))
+        contenido()
+    }
+}
+
+// ==========================================================
 // FORMULARIO: 4 SECCIONES NUMERADAS
-// Los campos aparecen conforme se llenan los anteriores.
+// Los campos se muestran dentro de la tarjeta con scroll interno.
 // ==========================================================
 
 @Composable
@@ -1298,307 +1271,167 @@ private fun FormularioSecciones(
     mostrarDetalles: Boolean,
     mostrarContacto: Boolean
 ) {
-
-    // ---------------------- 1. FOTOS ----------------------
-
-    TarjetaSeccionNumerada(
-        numero = 1,
-        titulo = "Fotos",
-        subtitulo = if (fotos.isEmpty()) {
-            "Opcional, pero ayudan mucho a identificarlo"
-        } else {
-            "${fotos.size}/3 fotos agregadas"
-        },
-        acento = acento
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-
-        if (fotos.isEmpty()) {
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(112.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(acentoClaro.copy(alpha = 0.45f))
-                    .drawBehind {
-                        drawRoundRect(
-                            color = acento.copy(alpha = 0.55f),
-                            cornerRadius = CornerRadius(18.dp.toPx()),
-                            style = Stroke(
-                                width = 1.5.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(
-                                    floatArrayOf(18f, 14f)
-                                )
-                            )
-                        )
-                    }
-                    .clickable(onClick = abrirGaleria),
-                contentAlignment = Alignment.Center
-            ) {
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(acento),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Agregar fotos",
-                            tint = Color.White,
-                            modifier = Modifier.size(25.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(7.dp))
-
-                    Text(
-                        text = "Toca para agregar fotos",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextoPrincipal
-                    )
-
-                    Text(
-                        text = "Hasta 3 imágenes",
-                        fontSize = 11.sp,
-                        color = TextoSecundario
-                    )
-                }
-            }
-
-        } else {
-
+        // FOTO: bloque compacto y horizontal para aprovechar mejor la pantalla.
+        TarjetaSeccionNumerada(
+            numero = 1,
+            titulo = "Fotos",
+            subtitulo = "Opcional · hasta 3 imágenes",
+            acento = acento
+        ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-                fotos.forEach { uri ->
-                    MiniFoto(
-                        uri = uri,
-                        onQuitar = { quitarFoto(uri) }
-                    )
-                }
-
-                if (fotos.size < 3) {
-                    Box(
+                if (fotos.isEmpty()) {
+                    Column(
                         modifier = Modifier
-                            .size(84.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(acentoClaro.copy(alpha = 0.45f))
+                            .weight(1f)
+                            .height(108.dp)
+                            .clip(RoundedCornerShape(17.dp))
+                            .background(acentoClaro.copy(alpha = 0.48f))
                             .drawBehind {
                                 drawRoundRect(
-                                    color = acento.copy(alpha = 0.55f),
-                                    cornerRadius = CornerRadius(16.dp.toPx()),
+                                    color = acento.copy(alpha = 0.6f),
+                                    cornerRadius = CornerRadius(17.dp.toPx()),
                                     style = Stroke(
-                                        width = 1.5.dp.toPx(),
-                                        pathEffect = PathEffect.dashPathEffect(
-                                            floatArrayOf(16f, 12f)
-                                        )
+                                        width = 1.4.dp.toPx(),
+                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f))
                                     )
                                 )
                             }
-                            .clickable(onClick = abrirGaleria),
-                        contentAlignment = Alignment.Center
+                            .clickable(onClick = abrirGaleria)
+                            .padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Agregar otra foto",
-                            tint = acento,
-                            modifier = Modifier.size(28.dp)
-                        )
+                        Box(
+                            modifier = Modifier.size(38.dp).clip(CircleShape).background(acento),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Add, "Agregar fotos", tint = Color.White, modifier = Modifier.size(21.dp))
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text("Agregar fotos", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
+                        Text("Hasta 3 imágenes", fontSize = 10.sp, color = TextoSecundario)
+                    }
+                } else {
+                    fotos.forEach { uri ->
+                        MiniFoto(uri = uri, onQuitar = { quitarFoto(uri) })
+                    }
+                    if (fotos.size < 3) {
+                        Box(
+                            modifier = Modifier
+                                .size(84.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(acentoClaro)
+                                .clickable(onClick = abrirGaleria),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Add, "Agregar otra foto", tint = acento, modifier = Modifier.size(25.dp))
+                        }
                     }
                 }
             }
-        }
-    }
-
-    Spacer(modifier = Modifier.height(14.dp))
-
-    // ---------------------- 2. DETALLES ----------------------
-
-    TarjetaSeccionNumerada(
-        numero = 2,
-        titulo = "Detalles del objeto",
-        subtitulo = "Qué es y cómo es",
-        acento = acento
-    ) {
-
-        Etiqueta(
-            texto = "Nombre del objeto",
-            obligatorio = true
-        )
-
-        CampoTexto(
-            valor = nombre,
-            onCambio = onNombre,
-            placeholder = ejemploNombre,
-            modifier = Modifier.height(54.dp),
-            singleLine = true,
-            error = intentoPublicar && nombre.isBlank(),
-            acento = acento
-        )
-
-        // Aparece al escribir el nombre
-        Revela(visible = mostrarCategoria) {
-
-            Column {
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Etiqueta(
-                    texto = "Categoría",
-                    obligatorio = true
-                )
-
-                CategoriasChips(
-                    seleccion = categoria,
-                    error = intentoPublicar && categoria == null,
-                    acento = acento,
-                    onSeleccion = onCategoria
-                )
+            if (fotos.isNotEmpty()) {
+                Spacer(Modifier.height(7.dp))
+                Text("${fotos.size}/3 fotos", fontSize = 10.sp, color = TextoSecundario)
             }
         }
 
-        // Aparece al elegir la categoría
-        Revela(visible = mostrarDetalles) {
-
-            Column {
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Etiqueta(
-                    texto = "Descripción",
-                    obligatorio = false
+        // DETALLES: aparece de forma progresiva, pero queda dentro del mismo card.
+        if (true) {
+            TarjetaSeccionNumerada(
+                numero = 2,
+                titulo = "Detalles",
+                subtitulo = "Del objeto",
+                acento = acento
+            ) {
+                Etiqueta("Nombre", obligatorio = true)
+                CampoTexto(
+                    valor = nombre,
+                    onCambio = onNombre,
+                    placeholder = ejemploNombre,
+                    modifier = Modifier.height(54.dp),
+                    singleLine = true,
+                    error = intentoPublicar && nombre.isBlank(),
+                    acento = acento
                 )
 
+                Spacer(Modifier.height(12.dp))
+                Etiqueta("Categoría", obligatorio = true)
+                if (true) {
+                    CategoriasChips(
+                        seleccion = categoria,
+                        error = intentoPublicar && categoria == null,
+                        acento = acento,
+                        onSeleccion = onCategoria
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Etiqueta("Descripción", obligatorio = false)
                 CampoTexto(
                     valor = descripcion,
-                    onCambio = {
-                        if (it.length <= LIMITE_DESCRIPCION) {
-                            onDescripcion(it)
-                        }
-                    },
-                    placeholder = "Marcas, color, contenido o detalles importantes...",
-                    modifier = Modifier.height(110.dp),
+                    onCambio = { if (it.length <= LIMITE_DESCRIPCION) onDescripcion(it) },
+                    placeholder = "Color, marcas, tamaño y otros detalles...",
+                    modifier = Modifier.height(100.dp),
                     singleLine = false,
                     error = false,
                     acento = acento
                 )
-
                 Text(
-                    text = "${descripcion.length}/$LIMITE_DESCRIPCION",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 5.dp),
-                    fontSize = 11.sp,
+                    "${descripcion.length}/$LIMITE_DESCRIPCION",
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    fontSize = 10.sp,
                     color = TextoClaro,
                     textAlign = TextAlign.End
                 )
             }
         }
-    }
 
-    // ---------------------- 3. UBICACIÓN ----------------------
-    // Aparece al elegir la categoría
-
-    Revela(visible = mostrarDetalles) {
-
-        Column {
-
-            Spacer(modifier = Modifier.height(14.dp))
-
+        if (true) {
             TarjetaSeccionNumerada(
                 numero = 3,
-                titulo = "Ubicación",
-                subtitulo = "Dónde ocurrió o dónde lo encontraste",
+                titulo = "Ubicación y contacto",
+                subtitulo = "Información para poder devolverte el objeto",
                 acento = acento
             ) {
-
-                Etiqueta(
-                    texto = "Ubicación aproximada",
-                    obligatorio = true
-                )
-
+                Etiqueta("¿Dónde?", obligatorio = true)
                 CampoDesplegable(
-                    placeholder = "Selecciona la ubicación",
+                    placeholder = "Elegir lugar aproximado",
                     seleccion = ubicacion,
                     opciones = ubicacionesFormulario,
                     iconoInicio = R.drawable.location_dot_solid,
-                    flechaAbajo = false,
+                    flechaAbajo = true,
                     error = intentoPublicar && ubicacion == null,
                     acento = acento,
                     onSeleccion = onUbicacion
                 )
-            }
-        }
-    }
 
-    // ---------------------- 4. CONTACTO ----------------------
-    // Aparece al elegir la ubicación
-
-    Revela(visible = mostrarContacto) {
-
-        Column {
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            TarjetaSeccionNumerada(
-                numero = 4,
-                titulo = "Contacto por WhatsApp",
-                subtitulo = "Para que puedan escribirte directamente",
-                acento = acento
-            ) {
-
-                Etiqueta(
-                    texto = "Tu WhatsApp",
-                    obligatorio = true
+                Spacer(Modifier.height(14.dp))
+                Etiqueta("WhatsApp · 10 dígitos", obligatorio = true)
+                CampoTexto(
+                    valor = whatsapp,
+                    onCambio = onWhatsapp,
+                    placeholder = "8112345678",
+                    modifier = Modifier.height(54.dp),
+                    singleLine = true,
+                    error = intentoPublicar && whatsapp.length != 10,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    acento = acento
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFFE8F8EE)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Image(
-                            painter = painterResource(
-                                id = R.drawable.square_whatsapp_brands_solid
-                            ),
-                            contentDescription = "WhatsApp",
-                            modifier = Modifier.size(29.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(9.dp))
-
-                    CampoTexto(
-                        valor = whatsapp,
-                        onCambio = onWhatsapp,
-                        placeholder = "10 dígitos, ej. 8112345678",
-                        modifier = Modifier
-                            .height(54.dp)
-                            .weight(1f),
-                        singleLine = true,
-                        error = intentoPublicar && whatsapp.length != 10,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Phone
-                        ),
-                        ocuparAncho = false,
-                        acento = acento
-                    )
-                }
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    "Lo usarán únicamente para ponerse en contacto contigo sobre este reporte.",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = TextoSecundario
+                )
             }
         }
     }
@@ -1614,63 +1447,26 @@ private fun TarjetaSeccionNumerada(
     titulo: String,
     subtitulo: String,
     acento: Color,
+    modifier: Modifier = Modifier,
     contenido: @Composable ColumnScope.() -> Unit
 ) {
-
-    val forma = RoundedCornerShape(24.dp)
-
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 6.dp,
-                shape = forma,
-                ambientColor = Color(0x22004D3A),
-                spotColor = Color(0x22004D3A)
-            )
-            .background(Color.White, forma)
-            .border(1.dp, BordeCampo.copy(alpha = 0.7f), forma)
-            .padding(16.dp)
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(acento),
+                modifier = Modifier.size(30.dp).clip(CircleShape).background(acento),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = numero.toString(),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                Text(numero.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
-
-            Spacer(modifier = Modifier.width(11.dp))
-
+            Spacer(Modifier.width(10.dp))
             Column {
-                Text(
-                    text = titulo,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal
-                )
-                Text(
-                    text = subtitulo,
-                    fontSize = 12.sp,
-                    color = TextoSecundario
-                )
+                Text(titulo, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
+                Text(subtitulo, fontSize = 11.sp, color = TextoSecundario)
             }
         }
-
-        Spacer(modifier = Modifier.height(15.dp))
-
+        Spacer(Modifier.height(10.dp))
         contenido()
     }
 }
@@ -1690,7 +1486,7 @@ private fun TarjetaSeccionFormulario(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 6.dp,
+                elevation = 4.dp,
                 shape = forma,
                 ambientColor = Color(0x22004D3A),
                 spotColor = Color(0x22004D3A)
@@ -1715,18 +1511,13 @@ private fun CategoriasChips(
     acento: Color,
     onSeleccion: (String) -> Unit
 ) {
-
-    Column {
-
-        categoriasFormulario.chunked(3).forEach { fila ->
-
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        categoriasFormulario.chunked(2).forEach { fila ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-
                 fila.forEach { opcion ->
-
                     ChipCategoria(
                         opcion = opcion,
                         activa = seleccion == opcion,
@@ -1736,24 +1527,11 @@ private fun CategoriasChips(
                         onClick = { onSeleccion(opcion) }
                     )
                 }
-
-                repeat(3 - fila.size) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
+                if (fila.size == 1) Spacer(Modifier.weight(1f))
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
         }
-
         if (error && seleccion == null) {
-
-            Text(
-                text = "Selecciona una categoría",
-                fontSize = 12.sp,
-                color = Rojo
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
+            Text("Selecciona una categoría", fontSize = 11.sp, color = Rojo)
         }
     }
 }
@@ -1767,44 +1545,24 @@ private fun ChipCategoria(
     modifier: Modifier,
     onClick: () -> Unit
 ) {
-
-    val forma = RoundedCornerShape(16.dp)
-
-    val escala by animateFloatAsState(
-        targetValue = if (activa) 1.05f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.45f,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "escalaChip"
-    )
-
+    val forma = RoundedCornerShape(12.dp)
     val fondo by animateColorAsState(
         targetValue = if (activa) acento else FondoCampo,
-        animationSpec = tween(250),
+        animationSpec = tween(220),
         label = "fondoChip"
     )
-
     val borde by animateColorAsState(
         targetValue = when {
             activa -> acento
             errorSinSeleccion -> Rojo
             else -> BordeCampo
         },
-        animationSpec = tween(250),
+        animationSpec = tween(220),
         label = "bordeChip"
     )
-
-    val colorTexto by animateColorAsState(
-        targetValue = if (activa) Color.White else TextoPrincipal,
-        animationSpec = tween(250),
-        label = "textoChip"
-    )
-
     Column(
         modifier = modifier
-            .height(66.dp)
-            .scale(escala)
+            .height(56.dp)
             .clip(forma)
             .background(fondo)
             .border(
@@ -1812,24 +1570,36 @@ private fun ChipCategoria(
                 color = borde,
                 shape = forma
             )
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        val iconoCategoria = when (opcion) {
+            "Mochilas" -> Icons.Default.Add
+            "Electrónicos" -> Icons.Default.Search
+            "Llaves" -> Icons.Default.Check
+            "Ropa" -> Icons.Default.Close
+            "Accesorios" -> Icons.Default.KeyboardArrowDown
+            "Documentos" -> Icons.AutoMirrored.Filled.KeyboardArrowRight
+            "Libros" -> Icons.Default.KeyboardArrowDown
+            else -> Icons.Default.Add
+        }
 
-        Text(
-            text = emojisCategoria[opcion] ?: "📦",
-            fontSize = 21.sp
+        Icon(
+            imageVector = iconoCategoria,
+            contentDescription = opcion,
+            tint = if (activa) Color.White else acento,
+            modifier = Modifier.size(21.dp)
         )
-
-        Spacer(modifier = Modifier.height(2.dp))
-
+        Spacer(Modifier.height(2.dp))
         Text(
             text = opcion,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = colorTexto,
-            maxLines = 1
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (activa) Color.White else TextoPrincipal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -2104,28 +1874,9 @@ private fun MiniFoto(
         }.getOrNull()
     }
 
-    // Entrada con rebote
-    var visible by remember {
-        mutableStateOf(false)
-    }
-
-    LaunchedEffect(Unit) {
-        visible = true
-    }
-
-    val escalaEntrada by animateFloatAsState(
-        targetValue = if (visible) 1f else 0.5f,
-        animationSpec = spring(
-            dampingRatio = 0.55f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "escalaMiniFoto"
-    )
-
     Box(
         modifier = Modifier
             .size(84.dp)
-            .scale(escalaEntrada)
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFFEDEDED))
     ) {
@@ -2466,9 +2217,11 @@ private fun TarjetaCoincidencia(
 
                 } else {
 
-                    Text(
-                        text = "📦",
-                        fontSize = 26.sp
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Sin fotografía",
+                        tint = TextoClaro,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
@@ -2597,172 +2350,211 @@ private fun BotonCoincidenciaAnimado(
 }
 
 // ==========================================================
-// DIÁLOGO: MENSAJE PARA QUIEN PUBLICÓ EL REPORTE
-// Al enviar, se registra la coincidencia y se abre WhatsApp
-// directo al número del reporte con este mensaje listo.
+// CARD DESDE ABAJO: MENSAJE PARA QUIEN PUBLICÓ EL REPORTE
+// Reemplaza el AlertDialog por una tarjeta tipo bottom sheet.
 // ==========================================================
 
 @Composable
-private fun DialogoCoincidencia(
+private fun ModalCoincidenciaDesdeAbajo(
     reporte: ReporteExistente,
     usuarioPerdio: Boolean,
     enviando: Boolean,
     onCancelar: () -> Unit,
     onEnviar: (String) -> Unit
 ) {
+    var mensaje by remember { mutableStateOf("") }
+    var intento by remember { mutableStateOf(false) }
+    val mensajeInvalido = mensaje.trim().length < 5
 
-    var mensaje by remember {
-        mutableStateOf("")
-    }
-
-    var intento by remember {
-        mutableStateOf(false)
-    }
-
-    val mensajeInvalido =
-        mensaje.trim().length < 5
-
-    AlertDialog(
-
-        onDismissRequest = {
-
-            if (!enviando) {
-                onCancelar()
-            }
-        },
-
-        containerColor = Color.White,
-
-        title = {
-
-            Text(
-                text =
-                    if (usuarioPerdio) {
-                        "Confirmar que es tuyo"
-                    } else {
-                        "Confirmar que lo encontraste"
-                    },
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal
-            )
-        },
-
-        text = {
-
-            Column(
-                modifier = Modifier.verticalScroll(
-                    rememberScrollState()
-                )
+    AnimatedVisibility(
+        visible = true,
+        modifier = Modifier.fillMaxSize(),
+        enter = fadeIn(tween(220)),
+        exit = fadeOut(tween(160))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(FondoModal)
+                .clickable(
+                    enabled = !enviando,
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onCancelar
+                ),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically(
+                    animationSpec = tween(420, easing = FastOutSlowInEasing)
+                ) { it } + fadeIn(tween(250)),
+                exit = fadeOut(tween(150)) +
+                        androidx.compose.animation.slideOutVertically(tween(250)) { it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        enabled = true,
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = {}
+                    )
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(18.dp, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
+                        .background(Color.White, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .imePadding()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(42.dp)
+                            .height(5.dp)
+                            .clip(CircleShape)
+                            .background(BordeCampo)
+                            .align(Alignment.CenterHorizontally)
+                    )
 
-                Text(
-                    text = reporte.titulo,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = VerdeOscuro
-                )
+                    Spacer(Modifier.height(14.dp))
 
-                Spacer(
-                    modifier = Modifier.height(12.dp)
-                )
-
-                Etiqueta(
-                    texto =
-                        if (usuarioPerdio) {
-                            "¿Por qué es tuyo?"
-                        } else {
-                            "¿Dónde lo tienes?"
-                        },
-                    obligatorio = true
-                )
-
-                CampoTexto(
-                    valor = mensaje,
-                    onCambio = {
-
-                        if (it.length <= LIMITE_DESCRIPCION) {
-                            mensaje = it
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(RojoClaro),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Search, null, tint = RojoOscuro, modifier = Modifier.size(22.dp))
                         }
-                    },
-                    placeholder =
-                        if (usuarioPerdio) {
-                            "Algo que solo el dueño sabría (marcas, contenido...)"
-                        } else {
-                            "Ej. Lo tengo en la biblioteca, mostrador"
-                        },
-                    modifier = Modifier.height(100.dp),
-                    singleLine = false,
-                    error = intento && mensajeInvalido
-                )
-
-                if (intento && mensajeInvalido) {
-
-                    Spacer(
-                        modifier = Modifier.height(4.dp)
-                    )
-
-                    Text(
-                        text = "Escribe al menos 5 caracteres",
-                        fontSize = 12.sp,
-                        color = Rojo
-                    )
-                }
-
-                Spacer(
-                    modifier = Modifier.height(12.dp)
-                )
-
-                Text(
-                    text = "💬 Se abrirá WhatsApp con tu mensaje listo para enviarlo a quien publicó el reporte.",
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = TextoSecundario
-                )
-            }
-        },
-
-        confirmButton = {
-
-            TextButton(
-                onClick = {
-
-                    intento = true
-
-                    if (!mensajeInvalido && !enviando) {
-                        onEnviar(mensaje.trim())
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = if (usuarioPerdio) "¿Es tu objeto?" else "¿Tú lo encontraste?",
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextoPrincipal
+                            )
+                            Text(
+                                text = "Confirma los detalles antes de contactar al usuario.",
+                                fontSize = 12.sp,
+                                color = TextoSecundario
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(FondoGris)
+                                .clickable(enabled = !enviando, onClick = onCancelar),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Close, "Cerrar", tint = TextoSecundario, modifier = Modifier.size(19.dp))
+                        }
                     }
-                },
-                enabled = !enviando
-            ) {
 
-                Text(
-                    text =
-                        if (enviando) {
-                            "Enviando..."
+                    Spacer(Modifier.height(14.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(FondoCampo)
+                            .border(1.dp, BordeCampo, RoundedCornerShape(18.dp))
+                            .padding(14.dp)
+                    ) {
+                        Text(reporte.titulo, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            listOf(reporte.categoria, reporte.ubicacion).filter { it.isNotBlank() }.joinToString(" • "),
+                            fontSize = 12.sp,
+                            color = VerdeOscuro,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Etiqueta(
+                        texto = if (usuarioPerdio) "¿Por qué es tuyo?" else "¿Dónde lo tienes?",
+                        obligatorio = true
+                    )
+
+                    CampoTexto(
+                        valor = mensaje,
+                        onCambio = { if (it.length <= LIMITE_DESCRIPCION) mensaje = it },
+                        placeholder = if (usuarioPerdio) {
+                            "Marcas, contenido, detalles que solo el dueño sabría..."
                         } else {
-                            "Abrir WhatsApp"
+                            "Ej. Lo tengo en la biblioteca, en el mostrador..."
                         },
-                    fontWeight = FontWeight.Bold,
-                    color = VerdeOscuro
-                )
-            }
-        },
+                        modifier = Modifier.height(110.dp),
+                        singleLine = false,
+                        error = intento && mensajeInvalido,
+                        acento = RojoOscuro
+                    )
 
-        dismissButton = {
+                    if (intento && mensajeInvalido) {
+                        Spacer(Modifier.height(5.dp))
+                        Text("Escribe al menos 5 caracteres", fontSize = 11.sp, color = RojoOscuro)
+                    }
 
-            TextButton(
-                onClick = onCancelar,
-                enabled = !enviando
-            ) {
+                    Spacer(Modifier.height(10.dp))
 
-                Text(
-                    text = "Cancelar",
-                    color = TextoSecundario
-                )
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Default.Check, null, tint = Verde, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            "Al continuar se abrirá WhatsApp con el mensaje listo para enviarlo.",
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            color = TextoSecundario
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(FondoGris)
+                                .clickable(enabled = !enviando, onClick = onCancelar),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Cancelar", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextoSecundario)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .height(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(RojoOscuro)
+                                .clickable(enabled = !enviando) {
+                                    intento = true
+                                    if (!mensajeInvalido) onEnviar(mensaje.trim())
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (enviando) {
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+                            } else {
+                                Text("Abrir WhatsApp", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                }
             }
         }
-    )
+    }
 }
 
 // ==========================================================
@@ -2898,6 +2690,58 @@ private fun abrirWhatsApp(
             "No se pudo abrir WhatsApp",
             Toast.LENGTH_LONG
         ).show()
+    }
+}
+
+// ==========================================================
+// AVISO DE PUBLICACIÓN DENTRO DE LA APP
+// ==========================================================
+
+@Composable
+private fun AvisoPublicacion(
+    mensaje: String,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = true,
+        modifier = modifier,
+        enter = slideInVertically(
+            animationSpec = tween(420, easing = FastOutSlowInEasing)
+        ) { -it } + fadeIn(tween(250)),
+        exit = fadeOut(tween(180))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(14.dp, RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White)
+                .border(1.dp, RojoClaro, RoundedCornerShape(18.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Rojo),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("¡Publicado!", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
+                Text(
+                    mensaje,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = TextoSecundario,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 
