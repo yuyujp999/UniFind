@@ -1,8 +1,11 @@
 package com.unifind.app
 
 import android.content.Context
-import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -50,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -117,6 +121,17 @@ fun DetalleScreen(
     var dialogoAtender by remember { mutableStateOf(false) }
     var dialogoEliminar by remember { mutableStateOf(false) }
 
+    var notificacionVisible by remember { mutableStateOf(false) }
+    var notificacionMensaje by remember { mutableStateOf("") }
+    var notificacionError by remember { mutableStateOf(false) }
+
+    fun mostrarNotificacion(mensaje: String, error: Boolean = false) {
+        notificacionMensaje = mensaje
+        notificacionError = error
+        notificacionVisible = false
+        notificacionVisible = true
+    }
+
     // ------------------------------------------------------
     // ESCUCHAR HISTORIAL (todos) Y CONTACTOS (solo el dueño)
     // ------------------------------------------------------
@@ -163,11 +178,11 @@ fun DetalleScreen(
             nuevo = nuevo,
             onExito = {
                 trabajando = false
-                Toast.makeText(contexto, mensajeOk, Toast.LENGTH_SHORT).show()
+                mostrarNotificacion(mensajeOk)
             },
             onError = {
                 trabajando = false
-                Toast.makeText(contexto, it, Toast.LENGTH_LONG).show()
+                mostrarNotificacion(it, error = true)
             }
         )
     }
@@ -309,6 +324,16 @@ fun DetalleScreen(
                 color = UF.VerdeOscuro
             )
         }
+
+        NotificacionDetalle(
+            visible = notificacionVisible,
+            mensaje = notificacionMensaje,
+            error = notificacionError,
+            onOcultar = { notificacionVisible = false },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+        )
     }
 
     // ======================================================
@@ -342,11 +367,7 @@ fun DetalleScreen(
 
                         UniFindRepository.guardarWhatsapp(telefono)
 
-                        Toast.makeText(
-                            contexto,
-                            "Listo, avisamos a quien publicó el reporte",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        mostrarNotificacion("Listo, avisamos a quien publicó el reporte")
 
                         if (reporte.whatsapp.length == 10) {
                             abrirWhatsApp(contexto, reporte.whatsapp, mensaje)
@@ -354,14 +375,12 @@ fun DetalleScreen(
                     },
                     onError = {
                         trabajando = false
-                        Toast.makeText(contexto, it, Toast.LENGTH_LONG).show()
+                        mostrarNotificacion(it, error = true)
                     }
                 )
             }
         )
-    }
-
-    // ======================================================
+    }  // ======================================================
     // DIÁLOGO: ELIMINAR
     // ======================================================
 
@@ -374,7 +393,7 @@ fun DetalleScreen(
             text = {
                 Text(
                     "Se borrará «${reporte.titulo}» y ya no aparecerá en la app. " +
-                        "Esta acción no se puede deshacer."
+                            "Esta acción no se puede deshacer."
                 )
             },
             confirmButton = {
@@ -385,15 +404,11 @@ fun DetalleScreen(
                     UniFindRepository.eliminarReporte(
                         reporteId = reporte.id,
                         onExito = {
-                            Toast.makeText(
-                                contexto,
-                                "Reporte eliminado",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            mostrarNotificacion("Reporte eliminado")
                             onBack()
                         },
                         onError = {
-                            Toast.makeText(contexto, it, Toast.LENGTH_LONG).show()
+                            mostrarNotificacion(it, error = true)
                         }
                     )
                 }) {
@@ -854,7 +869,7 @@ private fun SeccionContactos(
 
             Text(
                 text = "Todavía nadie se ha puesto en contacto. " +
-                    "Cuando alguien lo haga, lo verás aquí.",
+                        "Cuando alguien lo haga, lo verás aquí.",
                 fontSize = 14.sp,
                 color = UF.TextoSec,
                 lineHeight = 20.sp
@@ -1118,7 +1133,6 @@ private fun BarraAcciones(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-
                 BotonSecundario(
                     texto = "Ya lo entregué / recibí",
                     onClick = onRecuperado,
@@ -1233,7 +1247,7 @@ private fun DialogoAtender(
 
                 Text(
                     text = "Dejaremos tu número para que la otra persona " +
-                        "pueda contactarte por WhatsApp o llamada.",
+                            "pueda contactarte por WhatsApp o llamada.",
                     fontSize = 14.sp,
                     color = UF.TextoSec
                 )
@@ -1301,6 +1315,83 @@ private fun CargandoDetalle() {
             Esqueleto(Modifier.fillMaxWidth(0.4f).height(24.dp).clip(RoundedCornerShape(12.dp)))
             Esqueleto(Modifier.fillMaxWidth(0.8f).height(30.dp).clip(RoundedCornerShape(12.dp)))
             Esqueleto(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(20.dp)))
+        }
+    }
+}
+
+@Composable
+private fun NotificacionDetalle(
+    visible: Boolean,
+    mensaje: String,
+    error: Boolean,
+    onOcultar: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LaunchedEffect(visible, mensaje, error) {
+        if (visible) {
+            kotlinx.coroutines.delay(3200)
+            onOcultar()
+        }
+    }
+
+    val color = if (error) Color(0xFFC62828) else Color(0xFF16845B)
+
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopEnd
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(start = 24.dp, end = 12.dp, top = 12.dp)
+                    .fillMaxWidth()
+                    .shadow(12.dp, RoundedCornerShape(20.dp))
+                    .background(Color.White, RoundedCornerShape(20.dp))
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(color.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (error) "!" else "✓",
+                        color = color,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = if (error) "Algo salió mal" else "¡Listo!",
+                        color = Color(0xFF18332B),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = mensaje,
+                        color = Color(0xFF586660),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .size(width = 4.dp, height = 42.dp)
+                        .background(color, RoundedCornerShape(50))
+                )
+            }
         }
     }
 }

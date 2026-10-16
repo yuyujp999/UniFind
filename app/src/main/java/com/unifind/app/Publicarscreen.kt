@@ -1,13 +1,20 @@
 package com.unifind.app
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.Intent
+import android.speech.RecognizerIntent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.location.Geocoder
+import android.location.LocationManager
+import android.os.Build
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.content.ContextCompat
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -59,6 +66,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
@@ -66,6 +79,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -94,10 +108,16 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -116,6 +136,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.text.Normalizer
+import java.util.Locale
+
+// ==========================================================
+// UniFind - Pantalla Publicar
+// Nota: AndroidManifest.xml debe declarar ACCESS_FINE_LOCATION y
+// ACCESS_COARSE_LOCATION. La app solicita el permiso en tiempo de ejecución.
+// ==========================================================
 
 // ==========================================================
 // COLORES UNIFIND
@@ -184,6 +211,108 @@ private val ubicacionesFormulario = listOf(
 // Diseño: banner de fondo (publicar_banner), campos que van
 // apareciendo conforme se llenan los anteriores y animaciones.
 // ==========================================================
+
+private fun obtenerUbicacionActual(
+    contexto: Context,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onCargando: (Boolean) -> Unit,
+    onUbicacion: (direccion: String, latitud: Double, longitud: Double) -> Unit,
+    onError: (String) -> Unit
+) {
+    val tienePermisoFino = ContextCompat.checkSelfPermission(
+        contexto, Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    val tienePermisoAproximado = ContextCompat.checkSelfPermission(
+        contexto, Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    if (!tienePermisoFino && !tienePermisoAproximado) {
+        onError("Concede el permiso de ubicación para detectar dónde estás.")
+        return
+    }
+
+    val locationManager =
+        contexto.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+    onCargando(true)
+
+    fun procesarUbicacion(location: android.location.Location?) {
+        if (location == null) {
+            onCargando(false)
+            onError("No se obtuvo una posición GPS. Activa la ubicación, sal a un lugar con mejor señal e inténtalo de nuevo.")
+            return
+        }
+
+        scope.launch {
+            val direccion = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (!Geocoder.isPresent()) return@runCatching null
+                    @Suppress("DEPRECATION")
+                    Geocoder(contexto, Locale("es", "MX"))
+                        .getFromLocation(location.latitude, location.longitude, 1)
+                        ?.firstOrNull()
+                        ?.getAddressLine(0)
+                }.getOrNull()
+            }
+
+            val textoUbicacion = direccion?.takeIf { it.isNotBlank() }
+                ?: "Ubicación GPS (${String.format(Locale.US, "%.5f", location.latitude)}, ${String.format(Locale.US, "%.5f", location.longitude)})"
+
+            onUbicacion(textoUbicacion, location.latitude, location.longitude)
+            onCargando(false)
+        }
+    }
+
+    try {
+        val proveedores = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER
+        ).filter { proveedor ->
+            runCatching { locationManager.isProviderEnabled(proveedor) }
+                .getOrDefault(false)
+        }
+
+        if (proveedores.isEmpty()) {
+            onCargando(false)
+            onError("Activa la ubicación del teléfono desde los ajustes rápidos e inténtalo de nuevo.")
+            return
+        }
+
+        // En Android 11 o posterior solicita una posición actual y, si tarda o falla,
+        // intenta recuperar la última posición conocida disponible.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val proveedorActual = proveedores.firstOrNull {
+                it == LocationManager.GPS_PROVIDER
+            } ?: proveedores.first()
+
+            val ultimaConocida = proveedores.mapNotNull { proveedor ->
+                runCatching { locationManager.getLastKnownLocation(proveedor) }.getOrNull()
+            }.maxByOrNull { it.time }
+
+            locationManager.getCurrentLocation(
+                proveedorActual,
+                null,
+                contexto.mainExecutor
+            ) { location ->
+                procesarUbicacion(location ?: ultimaConocida)
+            }
+        } else {
+            val location = proveedores.mapNotNull { proveedor ->
+                runCatching { locationManager.getLastKnownLocation(proveedor) }.getOrNull()
+            }.maxByOrNull { it.time }
+
+            procesarUbicacion(location)
+        }
+    } catch (_: SecurityException) {
+        onCargando(false)
+        onError("Android no permitió acceder a la ubicación. Revisa los permisos de UniFind.")
+    } catch (_: Exception) {
+        onCargando(false)
+        onError("No se pudo obtener la ubicación. Comprueba que el GPS esté activado.")
+    }
+}
+
 
 @Composable
 fun PublicarScreen(
@@ -255,13 +384,53 @@ fun PublicarScreen(
         mutableStateOf<String?>(null)
     }
 
-    var whatsapp by remember {
-        mutableStateOf(
-            contexto
-                .getSharedPreferences("unifind", Context.MODE_PRIVATE)
-                .getString("whatsapp", "")
-                .orEmpty()
-        )
+    var latitud by remember { mutableStateOf<Double?>(null) }
+    var longitud by remember { mutableStateOf<Double?>(null) }
+    var ubicacionCargando by remember { mutableStateOf(false) }
+
+    // El teléfono se obtiene del perfil de la cuenta autenticada, nunca de
+    // SharedPreferences compartidas entre cuentas. Si el perfil no tiene teléfono,
+    // el campo permanece vacío.
+    var whatsapp by remember(miUid) { mutableStateOf("") }
+
+    LaunchedEffect(miUid) {
+        // Vaciar inmediatamente el valor anterior al cambiar de cuenta.
+        whatsapp = ""
+        if (miUid.isNotBlank()) {
+            runCatching {
+                FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(miUid)
+                    .get()
+                    .addOnSuccessListener { documento ->
+                        // Acepta nombres habituales de campo para adaptarse al perfil existente.
+                        val telefonoPerfil = sequenceOf(
+                            documento.getString("telefono"),
+                            documento.getString("numeroTelefono"),
+                            documento.getString("telefonoContacto"),
+                            documento.getString("whatsapp"),
+                            documento.getString("numeroWhatsApp"),
+                            documento.getString("phone")
+                        ).firstOrNull { !it.isNullOrBlank() }.orEmpty()
+
+                        val digitos = telefonoPerfil.filter(Char::isDigit)
+                        // Si se guardó con +52, quita el prefijo para dejar solo el número local.
+                        val numeroLocal = when {
+                            digitos.length == 12 && digitos.startsWith("52") -> digitos.drop(2)
+                            digitos.length == 13 && digitos.startsWith("521") -> digitos.drop(3)
+                            digitos.length > 10 -> digitos.takeLast(10)
+                            else -> digitos
+                        }
+                        whatsapp = numeroLocal.take(10)
+                    }
+                    .addOnFailureListener {
+                        // Si no se puede leer el perfil, no reutilizar el número de otra cuenta.
+                        whatsapp = ""
+                    }
+            }.onFailure {
+                whatsapp = ""
+            }
+        }
     }
 
     var intentoPublicar by remember {
@@ -277,6 +446,111 @@ fun PublicarScreen(
     }
 
     val scope = rememberCoroutineScope()
+
+    val lanzadorPermisosUbicacion = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permisos ->
+        val concedido =
+            permisos[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    permisos[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+        if (concedido) {
+            obtenerUbicacionActual(
+                contexto = contexto,
+                scope = scope,
+                onCargando = { ubicacionCargando = it },
+                onUbicacion = { direccion, lat, lon ->
+                    ubicacion = direccion
+                    latitud = lat
+                    longitud = lon
+                },
+                onError = { mensaje ->
+                    Toast.makeText(contexto, mensaje, Toast.LENGTH_LONG).show()
+                }
+            )
+        } else {
+            Toast.makeText(
+                contexto,
+                "Necesitamos permiso de ubicación para detectar dónde estabas.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    val solicitarUbicacion: () -> Unit = {
+        val tieneUbicacion =
+            ContextCompat.checkSelfPermission(
+                contexto,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(
+                        contexto,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+
+        if (tieneUbicacion) {
+            obtenerUbicacionActual(
+                contexto = contexto,
+                scope = scope,
+                onCargando = { ubicacionCargando = it },
+                onUbicacion = { direccion, lat, lon ->
+                    ubicacion = direccion
+                    latitud = lat
+                    longitud = lon
+                },
+                onError = { mensaje ->
+                    Toast.makeText(contexto, mensaje, Toast.LENGTH_LONG).show()
+                }
+            )
+        } else {
+            lanzadorPermisosUbicacion.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    val abrirMapa: () -> Unit = {
+        val lat = latitud
+        val lon = longitud
+        val destino = if (lat != null && lon != null) {
+            "$lat,$lon"
+        } else {
+            ubicacion?.takeIf { it.isNotBlank() } ?: "mi ubicación"
+        }
+
+        // Primero intenta abrir una app de mapas con geo:, después Google Maps web.
+        val geoUri = if (lat != null && lon != null) {
+            Uri.parse("geo:$lat,$lon?q=$lat,$lon(UniFind)")
+        } else {
+            Uri.parse("geo:0,0?q=${Uri.encode(destino)}")
+        }
+        val intentGeo = Intent(Intent.ACTION_VIEW, geoUri)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        runCatching {
+            contexto.startActivity(intentGeo)
+        }.onFailure {
+            runCatching {
+                val query = if (lat != null && lon != null) "$lat,$lon" else destino
+                val urlMapa = Uri.parse(
+                    "https://www.google.com/maps/search/?api=1&query=${Uri.encode(query)}"
+                )
+                contexto.startActivity(
+                    Intent(Intent.ACTION_VIEW, urlMapa)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure {
+                Toast.makeText(
+                    contexto,
+                    "No se pudo abrir el mapa. Comprueba tu conexión e intenta de nuevo.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     LaunchedEffect(avisoPublicacion) {
         if (avisoPublicacion != null) {
@@ -384,6 +658,57 @@ fun PublicarScreen(
         }
     }
 
+    // Cámara: captura una foto y la guarda en caché para usar el mismo flujo Base64.
+    val lanzadorCamara = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            if (fotos.size >= 3) {
+                Toast.makeText(contexto, "Máximo 3 fotos", Toast.LENGTH_SHORT).show()
+            } else {
+                runCatching {
+                    val archivo = java.io.File.createTempFile("unifind_camera_", ".jpg", contexto.cacheDir)
+                    archivo.outputStream().use { salida ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 88, salida)
+                    }
+                    fotos.add(Uri.fromFile(archivo))
+                }.onFailure {
+                    Toast.makeText(contexto, "No se pudo guardar la foto", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // Dictado: el reconocimiento de voz del dispositivo transcribe la descripción.
+    val lanzadorVoz = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { resultado ->
+        if (resultado.resultCode == android.app.Activity.RESULT_OK) {
+            val textoVoz = resultado.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            if (!textoVoz.isNullOrBlank()) {
+                descripcion = listOf(descripcion.trim(), textoVoz.trim())
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+                    .take(LIMITE_DESCRIPCION)
+            }
+        }
+    }
+
+    val dictarDescripcion: () -> Unit = {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-MX")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Describe el objeto")
+        }
+        runCatching {
+            lanzadorVoz.launch(intent)
+        }.onFailure {
+            Toast.makeText(contexto, "El dispositivo no tiene reconocimiento de voz disponible", Toast.LENGTH_LONG).show()
+        }
+    }
+
     // ======================================================
     // PUBLICAR (crea un reporte nuevo en Firestore)
     // ======================================================
@@ -461,13 +786,19 @@ fun PublicarScreen(
                             "descripcion" to descripcion.trim(),
                             "categoria" to (categoria ?: ""),
                             "ubicacionAprox" to (ubicacion ?: ""),
+                            "latitud" to (latitud ?: 0.0),
+                            "longitud" to (longitud ?: 0.0),
                             "estado" to estadoTexto,
                             "fecha" to FieldValue.serverTimestamp(),
                             "imagenUrl" to "",
                             "fotosBase64" to fotosBase64,
                             "usuarioId" to usuarioId,
                             "numContactos" to 0,
-                            "whatsapp" to whatsapp
+                            // El teléfono se guarda solo con los 10 dígitos del número.
+                            "whatsapp" to whatsapp.filter { it.isDigit() }.take(10),
+                            // La lada se guarda por reporte para no depender de la selección global posterior.
+                            "whatsappLada" to (contexto.getSharedPreferences("unifind", Context.MODE_PRIVATE)
+                                .getString("whatsapp_lada", "+52") ?: "+52")
                         )
 
                         FirebaseFirestore.getInstance()
@@ -477,21 +808,13 @@ fun PublicarScreen(
 
                                 publicando = false
 
-                                // Recordar el WhatsApp para la próxima vez
-                                contexto
-                                    .getSharedPreferences(
-                                        "unifind",
-                                        Context.MODE_PRIVATE
-                                    )
-                                    .edit()
-                                    .putString("whatsapp", whatsapp)
-                                    .apply()
-
                                 // Limpiar el formulario
                                 nombre = ""
                                 descripcion = ""
                                 categoria = null
                                 ubicacion = null
+                                latitud = null
+                                longitud = null
                                 intentoPublicar = false
                                 fotos.clear()
 
@@ -527,23 +850,24 @@ fun PublicarScreen(
     // PANTALLA
     // ======================================================
 
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(FondoPrincipal)
     ) {
 
-        // Alturas adaptables al teléfono para que el formulario tenga más espacio.
-        val espacioLogo = maxHeight * 0.13f
-        val alturaTarjetaFormulario = maxHeight * 0.50f
+        // Espaciado superior del formulario.
+        val espacioLogo = 54.dp
 
-        // Fondo: banner
-        Image(
-            painter = painterResource(id = R.drawable.publicar_banner),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            alignment = Alignment.TopCenter
+        // Fondo limpio: se elimina el banner que tapaba y ensuciaba el formulario.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color(0xFFF4FBF7), Color(0xFFE7F5ED))
+                    )
+                )
         )
 
         Scaffold(
@@ -566,9 +890,9 @@ fun PublicarScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
+                        top = paddingValues.calculateTopPadding(),
                         bottom = paddingValues.calculateBottomPadding()
                     )
-                    .imePadding()
             ) {
 
                 // ==============================================
@@ -578,14 +902,33 @@ fun PublicarScreen(
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .imePadding()
                         .padding(horizontal = 16.dp)
                 ) {
 
                     Spacer(modifier = Modifier.height(espacioLogo))
 
-                    SubtituloBanner(esPerdido = esPerdido)
+                    Text(
+                        text = "Publicar",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 2.dp, top = 2.dp, bottom = 2.dp),
+                        fontSize = 30.sp,
+                        lineHeight = 36.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.4).sp,
+                        color = Color(0xFF171717),
+                        textAlign = TextAlign.Start
+                    )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(7.dp))
+
+                    Divider(
+                        modifier = Modifier.padding(horizontal = 1.dp, vertical = 2.dp),
+                        thickness = 1.dp,
+                        color = Color(0xFFE0E7E2)
+                    )
 
                     SelectorTipoPublicacion(
                         tipo = tipo,
@@ -593,7 +936,7 @@ fun PublicarScreen(
                         onCambio = { tipo = it }
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(7.dp))
 
                     ProgresoFormulario(
                         completados = completados,
@@ -607,59 +950,161 @@ fun PublicarScreen(
                         text = "* Campos obligatorios",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
-                        color = VerdeBanner,
+                        color = Color(0xFF171717),
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
 
                     Aparece(visible = entro, retraso = 360) {
 
                         Column {
 
-                            TarjetaFormularioDesdeAbajo(
+                            FormularioSecciones(
                                 acento = colorPrincipal,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(alturaTarjetaFormulario)
-                            ) {
-                                FormularioSecciones(
-                                    acento = colorPrincipal,
-                                    acentoClaro = colorClaro,
-                                    fotos = fotos,
-                                    abrirGaleria = abrirGaleria,
-                                    quitarFoto = { uri ->
-                                        fotos.remove(uri)
-                                    },
-                                    nombre = nombre,
-                                    onNombre = { nombre = it },
-                                    ejemploNombre = ejemploNombre,
-                                    categoria = categoria,
-                                    onCategoria = { categoria = it },
-                                    descripcion = descripcion,
-                                    onDescripcion = { descripcion = it },
-                                    ubicacion = ubicacion,
-                                    onUbicacion = { ubicacion = it },
-                                    whatsapp = whatsapp,
-                                    onWhatsapp = {
-                                        whatsapp = it.filter { c -> c.isDigit() }.take(10)
-                                    },
-                                    intentoPublicar = intentoPublicar,
-                                    mostrarCategoria = true,
-                                    mostrarDetalles = true,
-                                    mostrarContacto = true
-                                )
+                                acentoClaro = colorClaro,
+                                fotos = fotos,
+                                abrirGaleria = abrirGaleria,
+                                abrirCamara = {
+                                    if (fotos.size >= 3) {
+                                        Toast.makeText(contexto, "Máximo 3 fotos", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        lanzadorCamara.launch(null)
+                                    }
+                                },
+                                dictarDescripcion = dictarDescripcion,
+                                quitarFoto = { uri ->
+                                    fotos.remove(uri)
+                                },
+                                nombre = nombre,
+                                onNombre = { nombre = it },
+                                ejemploNombre = ejemploNombre,
+                                categoria = categoria,
+                                onCategoria = { categoria = it },
+                                descripcion = descripcion,
+                                onDescripcion = { descripcion = it },
+                                ubicacion = ubicacion,
+                                onUbicacion = { ubicacion = it },
+                                whatsapp = whatsapp,
+                                onWhatsapp = {
+                                    whatsapp = it.filter { c -> c.isDigit() }.take(10)
+                                },
+                                intentoPublicar = intentoPublicar,
+                                mostrarCategoria = true,
+                                mostrarDetalles = true,
+                                mostrarContacto = true,
+                                latitud = latitud,
+                                longitud = longitud,
+                                ubicacionCargando = ubicacionCargando,
+                                obtenerUbicacion = solicitarUbicacion,
+                                abrirMapa = abrirMapa
+                            )
+
+                            // ======================================
+                            // LISTA DE OBJETOS PERDIDOS
+                            // Cuando se elige "Encontré algo", muestra
+                            // reportes activos para vincular el hallazgo
+                            // con el reporte original y evitar duplicados.
+                            // ======================================
+
+                            Revela(visible = !esPerdido) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(9.dp))
+
+                                    TarjetaSeccionFormulario {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(CircleShape)
+                                                    .background(VerdeClaro),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = null,
+                                                    tint = VerdeOscuro,
+                                                    modifier = Modifier.size(21.dp)
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.width(10.dp))
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Objetos reportados como perdidos",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextoPrincipal
+                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = "Si encuentras uno de estos objetos, selecciónalo para indicar dónde lo encontraste.",
+                                                    fontSize = 12.sp,
+                                                    lineHeight = 17.sp,
+                                                    color = TextoSecundario
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        // No exigir WhatsApp para mostrar el reporte:
+                                        // los reportes antiguos pueden tener el contacto
+                                        // en la subcolección contactos y no en el documento raíz.
+                                        val reportesPerdidosActivos = reportesOpuestos
+                                            .filter { reporte ->
+                                                reporte.usuarioId.isNotBlank() &&
+                                                        reporte.usuarioId != miUid &&
+                                                        reporte.id.isNotBlank()
+                                            }
+                                            .distinctBy { it.id }
+                                            .sortedByDescending { it.fechaMillis }
+
+                                        if (reportesPerdidosActivos.isEmpty()) {
+                                            Text(
+                                                text = "Por ahora no hay objetos perdidos disponibles para vincular. Puedes continuar con el formulario y publicar el objeto encontrado como un reporte nuevo.",
+                                                fontSize = 13.sp,
+                                                lineHeight = 19.sp,
+                                                color = TextoSecundario
+                                            )
+                                        } else {
+                                            reportesPerdidosActivos.forEachIndexed { index, reporte ->
+                                                TarjetaCoincidencia(
+                                                    reporte = reporte,
+                                                    textoBoton = "Lo encontré",
+                                                    onReclamar = {
+                                                        seleccionado = reporte
+                                                    }
+                                                )
+                                                if (index < reportesPerdidosActivos.lastIndex) {
+                                                    Spacer(modifier = Modifier.height(9.dp))
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "¿No aparece? Continúa con el formulario y pulsa «Publicar objeto encontrado» para crear un reporte independiente.",
+                                                fontSize = 12.sp,
+                                                lineHeight = 17.sp,
+                                                color = TextoSecundario
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             // ======================================
-                            // SUGERENCIAS: ¿YA LO REPORTARON?
+                            // SUGERENCIAS PARA OBJETOS PERDIDOS POR EL USUARIO
                             // ======================================
 
-                            Revela(visible = sugerencias.isNotEmpty()) {
+                            Revela(visible = esPerdido && sugerencias.isNotEmpty()) {
 
                                 Column {
 
-                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Spacer(modifier = Modifier.height(9.dp))
 
                                     TarjetaSeccionFormulario {
 
@@ -733,7 +1178,7 @@ fun PublicarScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(7.dp))
                         }
                     }
                 }
@@ -748,7 +1193,7 @@ fun PublicarScreen(
                         .background(Color.Transparent)
                         .padding(
                             horizontal = 16.dp,
-                            vertical = 10.dp
+                            vertical = 7.dp
                         )
                 ) {
                     BotonPublicarAnimado(
@@ -808,7 +1253,12 @@ fun PublicarScreen(
                             } else {
                                 "Hola, vi tu reporte del objeto perdido \"${reporteElegido.titulo}\" en UniFind y creo que lo encontré."
                             }
-                            abrirWhatsApp(contexto, reporteElegido.whatsapp, "$saludo $mensaje")
+                            abrirWhatsApp(
+                                contexto,
+                                reporteElegido.whatsapp,
+                                "$saludo $mensaje",
+                                reporteElegido.whatsappLada
+                            )
                             onTerminar()
                         },
                         onError = { motivo ->
@@ -947,7 +1397,7 @@ private fun ProgresoFormulario(
             },
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = VerdeBanner
+            color = Color(0xFF171717)
         )
     }
 }
@@ -1070,24 +1520,13 @@ private fun OpcionTipo(
         contentAlignment = Alignment.Center
     ) {
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icono,
-                contentDescription = null,
-                tint = colorTexto,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = texto,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = colorTexto
-            )
-        }
+        Text(
+            text = texto,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = colorTexto,
+            maxLines = 1
+        )
     }
 }
 
@@ -1254,6 +1693,8 @@ private fun FormularioSecciones(
     acentoClaro: Color,
     fotos: List<Uri>,
     abrirGaleria: () -> Unit,
+    abrirCamara: () -> Unit,
+    dictarDescripcion: () -> Unit,
     quitarFoto: (Uri) -> Unit,
     nombre: String,
     onNombre: (String) -> Unit,
@@ -1269,167 +1710,212 @@ private fun FormularioSecciones(
     intentoPublicar: Boolean,
     mostrarCategoria: Boolean,
     mostrarDetalles: Boolean,
-    mostrarContacto: Boolean
+    mostrarContacto: Boolean,
+    latitud: Double?,
+    longitud: Double?,
+    ubicacionCargando: Boolean,
+    obtenerUbicacion: () -> Unit,
+    abrirMapa: () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // FOTO: bloque compacto y horizontal para aprovechar mejor la pantalla.
-        TarjetaSeccionNumerada(
+        SeccionTitulo(
             numero = 1,
             titulo = "Fotos",
             subtitulo = "Opcional · hasta 3 imágenes",
             acento = acento
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (fotos.isEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(108.dp)
-                            .clip(RoundedCornerShape(17.dp))
-                            .background(acentoClaro.copy(alpha = 0.48f))
-                            .drawBehind {
-                                drawRoundRect(
-                                    color = acento.copy(alpha = 0.6f),
-                                    cornerRadius = CornerRadius(17.dp.toPx()),
-                                    style = Stroke(
-                                        width = 1.4.dp.toPx(),
-                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f))
-                                    )
-                                )
-                            }
-                            .clickable(onClick = abrirGaleria)
-                            .padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            modifier = Modifier.size(38.dp).clip(CircleShape).background(acento),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Add, "Agregar fotos", tint = Color.White, modifier = Modifier.size(21.dp))
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text("Agregar fotos", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
-                        Text("Hasta 3 imágenes", fontSize = 10.sp, color = TextoSecundario)
-                    }
-                } else {
-                    fotos.forEach { uri ->
-                        MiniFoto(uri = uri, onQuitar = { quitarFoto(uri) })
-                    }
-                    if (fotos.size < 3) {
-                        Box(
-                            modifier = Modifier
-                                .size(84.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(acentoClaro)
-                                .clickable(onClick = abrirGaleria),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Add, "Agregar otra foto", tint = acento, modifier = Modifier.size(25.dp))
-                        }
-                    }
-                }
-            }
-            if (fotos.isNotEmpty()) {
-                Spacer(Modifier.height(7.dp))
-                Text("${fotos.size}/3 fotos", fontSize = 10.sp, color = TextoSecundario)
-            }
-        }
-
-        // DETALLES: aparece de forma progresiva, pero queda dentro del mismo card.
-        if (true) {
-            TarjetaSeccionNumerada(
-                numero = 2,
-                titulo = "Detalles",
-                subtitulo = "Del objeto",
-                acento = acento
-            ) {
-                Etiqueta("Nombre", obligatorio = true)
-                CampoTexto(
-                    valor = nombre,
-                    onCambio = onNombre,
-                    placeholder = ejemploNombre,
-                    modifier = Modifier.height(54.dp),
-                    singleLine = true,
-                    error = intentoPublicar && nombre.isBlank(),
-                    acento = acento
+            if (fotos.isEmpty()) {
+                AccionFoto(
+                    modifier = Modifier.weight(1f),
+                    icono = Icons.Default.CameraAlt,
+                    titulo = "Tomar foto",
+                    subtitulo = "Usar cámara",
+                    acento = acento,
+                    fondo = acentoClaro,
+                    onClick = abrirCamara
                 )
-
-                Spacer(Modifier.height(12.dp))
-                Etiqueta("Categoría", obligatorio = true)
-                if (true) {
-                    CategoriasChips(
-                        seleccion = categoria,
-                        error = intentoPublicar && categoria == null,
+                AccionFoto(
+                    modifier = Modifier.weight(1f),
+                    icono = Icons.Default.PhotoLibrary,
+                    titulo = "Galería",
+                    subtitulo = "Elegir imágenes",
+                    acento = acento,
+                    fondo = FondoCampo,
+                    onClick = abrirGaleria
+                )
+            } else {
+                fotos.forEach { uri ->
+                    MiniFoto(uri = uri, onQuitar = { quitarFoto(uri) })
+                }
+                if (fotos.size < 3) {
+                    AccionFoto(
+                        modifier = Modifier.size(84.dp),
+                        icono = Icons.Default.CameraAlt,
+                        titulo = "Otra",
+                        subtitulo = "Cámara",
                         acento = acento,
-                        onSeleccion = onCategoria
+                        fondo = acentoClaro,
+                        onClick = abrirCamara
                     )
                 }
-
-                Spacer(Modifier.height(12.dp))
-                Etiqueta("Descripción", obligatorio = false)
-                CampoTexto(
-                    valor = descripcion,
-                    onCambio = { if (it.length <= LIMITE_DESCRIPCION) onDescripcion(it) },
-                    placeholder = "Color, marcas, tamaño y otros detalles...",
-                    modifier = Modifier.height(100.dp),
-                    singleLine = false,
-                    error = false,
-                    acento = acento
-                )
-                Text(
-                    "${descripcion.length}/$LIMITE_DESCRIPCION",
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    fontSize = 10.sp,
-                    color = TextoClaro,
-                    textAlign = TextAlign.End
-                )
             }
         }
 
-        if (true) {
-            TarjetaSeccionNumerada(
-                numero = 3,
-                titulo = "Ubicación y contacto",
-                subtitulo = "Información para poder devolverte el objeto",
-                acento = acento
-            ) {
-                Etiqueta("¿Dónde?", obligatorio = true)
-                CampoDesplegable(
-                    placeholder = "Elegir lugar aproximado",
-                    seleccion = ubicacion,
-                    opciones = ubicacionesFormulario,
-                    iconoInicio = R.drawable.location_dot_solid,
-                    flechaAbajo = true,
-                    error = intentoPublicar && ubicacion == null,
-                    acento = acento,
-                    onSeleccion = onUbicacion
-                )
+        if (fotos.isNotEmpty()) {
+            Text(
+                text = "${fotos.size}/3 fotos",
+                fontSize = 10.sp,
+                color = TextoSecundario
+            )
+        }
 
-                Spacer(Modifier.height(14.dp))
-                Etiqueta("WhatsApp · 10 dígitos", obligatorio = true)
-                CampoTexto(
-                    valor = whatsapp,
-                    onCambio = onWhatsapp,
-                    placeholder = "8112345678",
-                    modifier = Modifier.height(54.dp),
-                    singleLine = true,
-                    error = intentoPublicar && whatsapp.length != 10,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    acento = acento
-                )
-                Spacer(Modifier.height(7.dp))
+        Divider(
+            modifier = Modifier.padding(horizontal = 1.dp),
+            thickness = 1.dp,
+            color = Color(0xFFE0E7E2)
+        )
+
+        SeccionTitulo(
+            numero = 2,
+            titulo = "Detalles",
+            subtitulo = "Del objeto",
+            acento = acento
+        )
+
+        Etiqueta("Nombre", obligatorio = true)
+        CampoTexto(
+            valor = nombre,
+            onCambio = onNombre,
+            placeholder = ejemploNombre,
+            modifier = Modifier.height(54.dp),
+            singleLine = true,
+            error = intentoPublicar && nombre.isBlank(),
+            acento = acento
+        )
+
+        Spacer(Modifier.height(2.dp))
+        Etiqueta("Categoría", obligatorio = true)
+        CampoDesplegable(
+            placeholder = "Selecciona una categoría",
+            seleccion = categoria,
+            opciones = categoriasFormulario,
+            iconoInicio = null,
+            flechaAbajo = true,
+            error = intentoPublicar && categoria == null,
+            acento = acento,
+            onSeleccion = onCategoria
+        )
+
+        Spacer(Modifier.height(2.dp))
+        Etiqueta("Descripción", obligatorio = false)
+        CampoTextoConDictado(
+            valor = descripcion,
+            onCambio = { if (it.length <= LIMITE_DESCRIPCION) onDescripcion(it) },
+            placeholder = "Color, marcas, tamaño y otros detalles...",
+            dictar = dictarDescripcion,
+            acento = acento
+        )
+        Text(
+            text = "${descripcion.length}/$LIMITE_DESCRIPCION",
+            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+            fontSize = 10.sp,
+            color = TextoClaro,
+            textAlign = TextAlign.End
+        )
+
+        Divider(
+            modifier = Modifier.padding(horizontal = 1.dp),
+            thickness = 1.dp,
+            color = Color(0xFFE0E7E2)
+        )
+
+        SeccionTitulo(
+            numero = 3,
+            titulo = "Ubicación y contacto",
+            subtitulo = "Detecta dónde estabas y permite contactarte",
+            acento = acento
+        )
+
+        Etiqueta("Ubicación exacta", obligatorio = true)
+        CampoUbicacion(
+            direccion = ubicacion,
+            latitud = latitud,
+            longitud = longitud,
+            cargando = ubicacionCargando,
+            error = intentoPublicar && ubicacion == null,
+            acento = acento,
+            onObtenerUbicacion = obtenerUbicacion,
+            onAbrirMapa = abrirMapa
+        )
+
+        Spacer(Modifier.height(2.dp))
+        Etiqueta("WhatsApp · 10 dígitos", obligatorio = true)
+        CampoWhatsApp(
+            valor = whatsapp,
+            onCambio = onWhatsapp,
+            error = intentoPublicar && whatsapp.length != 10,
+            acento = acento
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "Lo usarán únicamente para ponerse en contacto contigo sobre este reporte.",
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = TextoSecundario
+        )
+
+        Divider(
+            modifier = Modifier.padding(horizontal = 1.dp),
+            thickness = 1.dp,
+            color = Color(0xFFE0E7E2)
+        )
+    }
+}
+
+@Composable
+private fun SeccionTitulo(
+    numero: Int,
+    titulo: String,
+    subtitulo: String,
+    acento: Color
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(30.dp).clip(CircleShape).background(acento),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    "Lo usarán únicamente para ponerse en contacto contigo sobre este reporte.",
+                    text = numero.toString(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = titulo,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.1).sp,
+                    color = TextoPrincipal
+                )
+                Text(
+                    text = subtitulo,
                     fontSize = 11.sp,
-                    lineHeight = 15.sp,
                     color = TextoSecundario
                 )
             }
@@ -1437,9 +1923,381 @@ private fun FormularioSecciones(
     }
 }
 
+@Composable
+private fun CampoTextoConDictado(
+    valor: String,
+    onCambio: (String) -> Unit,
+    placeholder: String,
+    dictar: () -> Unit,
+    acento: Color
+) {
+    OutlinedTextField(
+        value = valor,
+        onValueChange = onCambio,
+        modifier = Modifier.fillMaxWidth().height(96.dp),
+        singleLine = false,
+        placeholder = {
+            Text(placeholder, fontSize = 14.sp, color = TextoClaro)
+        },
+        trailingIcon = {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(acentoClaroPara(acento))
+                    .clickable(onClick = dictar),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = "Dictar descripción",
+                    tint = acento,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+        },
+        textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Color.Black,
+            unfocusedTextColor = Color.Black,
+            focusedBorderColor = acento,
+            unfocusedBorderColor = BordeCampo,
+            cursorColor = acento,
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = FondoCampo
+        )
+    )
+}
+
+private fun acentoClaroPara(acento: Color): Color =
+    if (acento == Rojo || acento == RojoOscuro) RojoClaro else VerdeClaro
+
+@Composable
+private fun CampoUbicacion(
+    direccion: String?,
+    latitud: Double?,
+    longitud: Double?,
+    cargando: Boolean,
+    error: Boolean,
+    acento: Color,
+    onObtenerUbicacion: () -> Unit,
+    onAbrirMapa: () -> Unit
+) {
+    val forma = RoundedCornerShape(14.dp)
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(58.dp)
+                .clip(forma)
+                .background(Color.White)
+                .border(
+                    if (error) 1.5.dp else 1.dp,
+                    if (error) Rojo else Color(0xFFD8E2DC),
+                    forma
+                )
+                .clickable(enabled = !cargando, onClick = onObtenerUbicacion)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = acento,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(9.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = direccion ?: "Detectar mi ubicación actual",
+                    fontSize = 14.sp,
+                    color = if (direccion == null) TextoClaro else TextoPrincipal,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (latitud != null && longitud != null) {
+                    Text(
+                        text = "Ubicación GPS guardada",
+                        fontSize = 10.sp,
+                        color = acento
+                    )
+                }
+            }
+
+            if (cargando) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(21.dp),
+                    color = acento,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(acentoClaroPara(acento)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Detectar ubicación",
+                        tint = acento,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(7.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Usa el GPS del teléfono para marcar dónde estabas.",
+                modifier = Modifier.weight(1f),
+                fontSize = 10.sp,
+                color = TextoSecundario
+            )
+
+            TextButton(
+                onClick = onAbrirMapa,
+                enabled = !cargando
+            ) {
+                Icon(
+                    Icons.Default.Map,
+                    contentDescription = null,
+                    tint = acento,
+                    modifier = Modifier.size(17.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    "Abrir mapa",
+                    color = acento,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+private val FormatoTelefonoVisual = VisualTransformation { texto ->
+    val digitos = texto.text.filter { it.isDigit() }.take(10)
+    val mostrado = buildString {
+        digitos.forEachIndexed { index, char ->
+            if (index == 3 || index == 6) append(' ')
+            append(char)
+        }
+    }
+    val mapping = object : OffsetMapping {
+        override fun originalToTransformed(offset: Int): Int {
+            val seguro = offset.coerceIn(0, digitos.length)
+            return seguro + (if (seguro > 3) 1 else 0) + (if (seguro > 6) 1 else 0)
+        }
+        override fun transformedToOriginal(offset: Int): Int {
+            var original = offset.coerceIn(0, mostrado.length)
+            if (offset > 3) original--
+            if (offset > 7) original--
+            return original.coerceIn(0, digitos.length)
+        }
+    }
+    TransformedText(AnnotatedString(mostrado), mapping)
+}
+
+private data class PaisTelefono(val nombre: String, val codigo: String, val bandera: String)
+
+private val PAISES_TELEFONO = listOf(
+    PaisTelefono("México", "+52", "MX"),
+    PaisTelefono("Estados Unidos", "+1", "US"),
+    PaisTelefono("Canadá", "+1", "CA"),
+    PaisTelefono("España", "+34", "ES"),
+    PaisTelefono("Colombia", "+57", "CO"),
+    PaisTelefono("Argentina", "+54", "AR"),
+    PaisTelefono("Brasil", "+55", "BR"),
+    PaisTelefono("Chile", "+56", "CL"),
+    PaisTelefono("Perú", "+51", "PE"),
+    PaisTelefono("Guatemala", "+502", "GT")
+)
+
+@Composable
+private fun BanderaPais(codigo: String, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(width = 25.dp, height = 17.dp)) {
+        val w = size.width
+        val h = size.height
+        fun rect(color: Color, left: Float, top: Float, right: Float, bottom: Float) {
+            drawRect(color, androidx.compose.ui.geometry.Offset(left, top), androidx.compose.ui.geometry.Size(right-left, bottom-top))
+        }
+        when (codigo) {
+            "MX" -> { rect(Color(0xFF006847),0f,0f,w/3,h); rect(Color.White,w/3,0f,2*w/3,h); rect(Color(0xFFCE1126),2*w/3,0f,w,h) }
+            "US" -> { for (i in 0..6) rect(if(i%2==0) Color(0xFFB22234) else Color.White,0f,h*i/7,w,h*(i+1)/7); rect(Color(0xFF3C3B6E),0f,0f,w*0.45f,h*0.55f) }
+            "CA" -> { rect(Color(0xFFD80621),0f,0f,w*0.27f,h); rect(Color.White,w*0.27f,0f,w*0.73f,h); rect(Color(0xFFD80621),w*0.73f,0f,w,h) }
+            "ES" -> { rect(Color(0xFFAA151B),0f,0f,w,h*0.25f); rect(Color(0xFFF1BF00),0f,h*0.25f,w,h*0.75f); rect(Color(0xFFAA151B),0f,h*0.75f,w,h) }
+            "CO" -> { rect(Color(0xFFFCD116),0f,0f,w,h/2); rect(Color(0xFF003893),0f,h/2,w,h*0.75f); rect(Color(0xFFCE1126),0f,h*0.75f,w,h) }
+            "AR" -> { rect(Color(0xFF74ACDF),0f,0f,w,h/3); rect(Color.White,0f,h/3,w,h*2/3); rect(Color(0xFF74ACDF),0f,h*2/3,w,h) }
+            "BR" -> { rect(Color(0xFF009739),0f,0f,w,h); val path = androidx.compose.ui.graphics.Path().apply { moveTo(w/2, h*0.15f); lineTo(w*0.9f,h/2); lineTo(w/2,h*0.85f); lineTo(w*0.1f,h/2); close() }; drawPath(path, Color(0xFFFFDF00)); drawCircle(Color(0xFF002776), radius=h*0.22f, center=androidx.compose.ui.geometry.Offset(w/2,h/2)) }
+            "CL" -> { rect(Color.White,0f,0f,w,h/2); rect(Color(0xFFD52B1E),0f,h/2,w,h); rect(Color(0xFF0039A6),0f,0f,h/2,h/2) }
+            "PE" -> { rect(Color(0xFFD91023),0f,0f,w/3,h); rect(Color.White,w/3,0f,2*w/3,h); rect(Color(0xFFD91023),2*w/3,0f,w,h) }
+            else -> { rect(Color(0xFF4997D0),0f,0f,w,h/3); rect(Color.White,0f,h/3,w,h*2/3); rect(Color(0xFF4997D0),0f,h*2/3,w,h) }
+        }
+        drawRoundRect(Color(0x33000000), size = size, cornerRadius = CornerRadius(3.dp.toPx()), style = Stroke(width = 0.6.dp.toPx()))
+    }
+}
+
+@Composable
+private fun CampoWhatsApp(
+    valor: String,
+    onCambio: (String) -> Unit,
+    error: Boolean,
+    acento: Color
+) {
+    val contexto = androidx.compose.ui.platform.LocalContext.current
+    var paisSeleccionado by remember {
+        mutableStateOf(
+            PAISES_TELEFONO.firstOrNull { it.codigo == contexto.getSharedPreferences("unifind", Context.MODE_PRIVATE).getString("whatsapp_lada", "+52") }
+                ?: PAISES_TELEFONO.first()
+        )
+    }
+    var mostrarPaises by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(end = 7.dp)
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF25D366)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Phone, contentDescription = "WhatsApp", tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .height(54.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White)
+                .border(1.dp, if (error) Color(0xFFD32F2F) else Color(0xFFDCE5DF), RoundedCornerShape(14.dp))
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(9.dp))
+                        .clickable { mostrarPaises = true }
+                        .padding(horizontal = 2.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    BanderaPais(paisSeleccionado.bandera)
+                    Text(paisSeleccionado.codigo, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF26332C))
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Elegir lada", tint = Color(0xFF68756D), modifier = Modifier.size(17.dp))
+                }
+                DropdownMenu(expanded = mostrarPaises, onDismissRequest = { mostrarPaises = false }) {
+                    PAISES_TELEFONO.forEach { pais ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                    BanderaPais(pais.bandera)
+                                    Text(pais.nombre, fontSize = 14.sp)
+                                    Text(pais.codigo, fontSize = 13.sp, color = Color(0xFF68756D))
+                                }
+                            },
+                            onClick = {
+                                paisSeleccionado = pais
+                                contexto.getSharedPreferences("unifind", Context.MODE_PRIVATE).edit().putString("whatsapp_lada", pais.codigo).apply()
+                                mostrarPaises = false
+                            }
+                        )
+                    }
+                }
+            }
+            Divider(modifier = Modifier.padding(horizontal = 8.dp).height(27.dp).width(1.dp), color = Color(0xFFDCE5DF))
+            androidx.compose.foundation.text.BasicTextField(
+                value = valor,
+                onValueChange = { onCambio(it.filter(Char::isDigit).take(10)) },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = Color(0xFF202820)),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                visualTransformation = FormatoTelefonoVisual,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(acento),
+                decorationBox = { inner ->
+                    Box {
+                        if (valor.isEmpty()) Text("826 166 8990", fontSize = 14.sp, color = Color(0xFF9AA39D))
+                        inner()
+                    }
+                }
+            )
+        }
+    }
+}
+
 // ==========================================================
 // TARJETA DE SECCIÓN NUMERADA
 // ==========================================================
+
+@Composable
+private fun AccionFoto(
+    modifier: Modifier = Modifier,
+    icono: androidx.compose.ui.graphics.vector.ImageVector,
+    titulo: String,
+    subtitulo: String,
+    acento: Color,
+    fondo: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .height(108.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(fondo)
+            .border(1.dp, acento.copy(alpha = 0.18f), RoundedCornerShape(17.dp))
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(acento),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icono,
+                contentDescription = titulo,
+                tint = Color.White,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = titulo,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextoPrincipal
+        )
+        Text(
+            text = subtitulo,
+            fontSize = 10.sp,
+            color = TextoSecundario,
+            textAlign = TextAlign.Center
+        )
+    }
+}
 
 @Composable
 private fun TarjetaSeccionNumerada(
@@ -1635,7 +2493,7 @@ private fun Etiqueta(
     }
 
     Spacer(
-        modifier = Modifier.height(8.dp)
+        modifier = Modifier.height(1.dp)
     )
 }
 
@@ -1653,7 +2511,8 @@ private fun CampoTexto(
     error: Boolean,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     ocuparAncho: Boolean = true,
-    acento: Color = Verde
+    acento: Color = Verde,
+    visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
 
     OutlinedTextField(
@@ -1667,6 +2526,7 @@ private fun CampoTexto(
         singleLine = singleLine,
         isError = error,
         keyboardOptions = keyboardOptions,
+        visualTransformation = visualTransformation,
 
         placeholder = {
 
@@ -2013,7 +2873,8 @@ private data class ReporteExistente(
     val usuarioId: String,
     val fotoBase64: String?,
     val fechaMillis: Long,
-    val whatsapp: String
+    val whatsapp: String,
+    val whatsappLada: String
 )
 
 // ==========================================================
@@ -2034,7 +2895,8 @@ private fun documentoAReporte(
         ubicacion = doc.getString("ubicacionAprox").orEmpty(),
         usuarioId = doc.getString("usuarioId").orEmpty(),
         fotoBase64 = fotos?.firstOrNull() as? String,
-        whatsapp = doc.getString("whatsapp").orEmpty(),
+        whatsapp = doc.getString("whatsapp").orEmpty().filter { it.isDigit() },
+        whatsappLada = doc.getString("whatsappLada") ?: "+52",
         fechaMillis =
             doc.getTimestamp("fecha")
                 ?.toDate()
@@ -2095,8 +2957,9 @@ private fun buscarCoincidencias(
 
     return reportes
         .filter {
-            it.whatsapp.length == 10 &&
-                    (PERMITIR_RECLAMAR_PROPIOS || it.usuarioId != miUid)
+            // No descartar reportes antiguos por no tener whatsapp en el documento raíz.
+            // El contacto puede existir en la subcolección contactos.
+            (PERMITIR_RECLAMAR_PROPIOS || it.usuarioId != miUid)
         }
         .mapNotNull { reporte ->
 
@@ -2668,14 +3531,21 @@ private fun registrarCoincidencia(
 private fun abrirWhatsApp(
     contexto: Context,
     telefono: String,
-    texto: String
+    texto: String,
+    ladaReporte: String? = null
 ) {
+    // La lada se combina solo al abrir WhatsApp; el campo conserva únicamente el número local.
+    val lada = (ladaReporte
+        ?: contexto.getSharedPreferences("unifind", Context.MODE_PRIVATE)
+            .getString("whatsapp_lada", "+52")
+        ?: "+52").filter { it.isDigit() }
+    val numero = telefono.filter { it.isDigit() }
 
     val intent =
         Intent(
             Intent.ACTION_VIEW,
             Uri.parse(
-                "https://wa.me/52$telefono?text=${Uri.encode(texto)}"
+                "https://wa.me/$lada$numero?text=${Uri.encode(texto)}"
             )
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
